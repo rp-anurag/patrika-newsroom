@@ -63,6 +63,26 @@ const RECURRING = [
   { md:'12-16', label:'Vijay Diwas (1971 War)', type:'national', color:'#d71920', angle:'Veterans, Bangladesh liberation, local 1971 heroes, war widows' },
   { md:'12-22', label:'National Mathematics Day', type:'social', color:'#3b82f6', angle:'Ramanujan legacy, math olympiad winners, student innovations' },
   { md:'12-25', label:'Christmas', type:'festival', color:'#16a34a', angle:'Celebrations, church events, Christian community stories, carol services' },
+
+  // ── Hyperlocal: Rajasthan ──────────────────────────────────────────────────
+  { md:'03-30', label:'Rajasthan Diwas — State Special', type:'local_raj', region:'RAJ', color:'#f97316', angle:'Special state edition: 75 years of Rajasthan — development report card, water crisis, desert economy, tourism numbers, border district stories, cultural identity' },
+  { md:'08-09', label:'Kajali Teej (approx)', type:'local_raj', region:'RAJ', color:'#16a34a', angle:'Women\'s sawan festival — mehendi markets, traditional songs, Jaipur jhankis, social angle on women\'s fasting traditions; contrast rural vs urban celebrations' },
+  { md:'10-15', label:'Shekhawati Festival (approx)', type:'local_raj', region:'RAJ', color:'#f97316', angle:'Shekhawati haveli paintings, fresco art revival, heritage walks in Mandawa/Nawalgarh/Jhunjhunu; tourism potential story' },
+  { md:'01-14', label:'Uttarayan / Makar Sankranti (Rajasthan)', type:'local_raj', region:'RAJ', color:'#C9A227', angle:'Jaipur International Kite Festival — tourism revenue, kite market economy, Patang bazaar, foreign tourists, accident data; Makar Mela at Pushkar' },
+
+  // ── Hyperlocal: Madhya Pradesh ────────────────────────────────────────────
+  { md:'12-02', label:'Bhopal Gas Tragedy Remembrance', type:'local_mp', region:'MP', color:'#374151', angle:'Dec 2–3, 1984 tragedy — survivors condition today, compensation pending cases, UCIL site contamination, health impact on next generation, govt accountability, Dow Chemical legal status' },
+  { md:'12-03', label:'Bhopal Gas Tragedy — Vigil Night', type:'local_mp', region:'MP', color:'#374151', angle:'Candle march, survivor testimonies, medical facilities at Bhopal gas victims hospital, SC case status, environmental remediation progress in Bhopal' },
+  { md:'11-01', label:'MP Foundation Day — State Special', type:'local_mp', region:'MP', color:'#8b5cf6', angle:'MP statehood since 1956 — growth data, infrastructure gaps, Narmada projects, industrial development, tribal belt stories, famous sons/daughters' },
+  { md:'06-21', label:'Yoga Day — Mahakal Connection', type:'local_mp', region:'MP', color:'#16a34a', angle:'Ujjain Mahakaleshwar as Yoga capital pitch; mass yoga at Ramghat, Omkareshwar, Bhima Betka; Patanjali impact, spiritual tourism numbers in MP' },
+
+  // ── Hyperlocal: Chhattisgarh ──────────────────────────────────────────────
+  { md:'11-01', label:'CG Foundation Day — State Special', type:'local_cg', region:'CG', color:'#0891b2', angle:'Chhattisgarh since 2000 — 25 years of statehood; mineral wealth vs tribal displacement, Naxal area development, rice bowl of India, state identity and culture' },
+  { md:'11-09', label:'Goncha Festival — Bastar (approx)', type:'local_cg', region:'CG', color:'#0891b2', angle:'Unique Bastar chariot festival unlike Puri — tribal traditions, wood chariot, folk deity procession; rare cultural angle for national readership' },
+
+  // ── Hyperlocal: MP + CG (both states) ────────────────────────────────────
+  { md:'11-15', label:'Janjatiya Gaurav Diwas', type:'local_mpcg', region:'MPCG', color:'#C9A227', angle:'Birsa Munda birth anniversary — tribal welfare schemes, Van Adhikar Patta, PESA act implementation, forest rights, displaced tribal families, literacy data in MP/CG tribal belt' },
+  { md:'10-02', label:'Gandhi Jayanti / Tribal Link (MP-CG)', type:'local_mpcg', region:'MPCG', color:'#d71920', angle:'Gram Swaraj in tribal MP/CG — Mahatma's vision vs ground reality; MNREGA in Adivasi districts, village self-governance under PESA, forest produce economy' },
 ];
 
 // Fixed dates in 2026 Gregorian calendar
@@ -95,24 +115,66 @@ const SPECIFIC_2026 = [
   { date:'2026-03-15', label:'IPL 2026 (approx start)', type:'sports', color:'#3b82f6', angle:'Team previews, local players, ticket sales, fan zone economy' },
   { date:'2026-06-11', label:'FIFA World Cup 2026 begins', type:'sports', color:'#3b82f6', angle:'Watch parties, fan zones, local football clubs, India angle' },
   { date:'2026-08-01', label:'Commonwealth Games 2026 (approx)', type:'sports', color:'#3b82f6', angle:'Indian athletes, local champions, medal hope stories' },
+
+  // ── Hyperlocal 2026: Rajasthan ────────────────────────────────────────────
+  { date:'2026-01-29', label:'Jaipur Literature Festival 2026 (JLF)', type:'local_raj', region:'RAJ', color:'#f97316', angle:'India\'s biggest lit fest — author lineup, book launches, Rajasthan tourism boost, hotel occupancy, volunteer stories; debate panels angle; ticket prices; international authors visiting' },
+  { date:'2026-02-11', label:'Desert Festival, Jaisalmer 2026', type:'local_raj', region:'RAJ', color:'#f97316', angle:'3-day Magha Purnima festival — camel races, turban-tying, folk music, Mr. Desert contest, tourism impact, hotel revenue in western Rajasthan, foreign tourist angle' },
+  { date:'2026-03-25', label:'Gangaur / Mewar Festival 2026', type:'local_raj', region:'RAJ', color:'#f97316', angle:'Udaipur procession of Isar-Gangaur idols on Lake Pichola — women\'s traditions, local crafts, tourism, comparing Jaipur vs Udaipur Gangaur; suhag symbol story' },
+  { date:'2026-05-22', label:'Maharana Pratap Jayanti 2026', type:'local_raj', region:'RAJ', color:'#f97316', angle:'State holiday — Haldighati battle legacy, Mewar royalty, Chetak story, Udaipur events, comparative history feature, school programs, BJP vs Congress angle on celebrations' },
+  { date:'2026-07-21', label:'Hariyali Teej 2026', type:'local_raj', region:'RAJ', color:'#16a34a', angle:'Sawan women\'s festival — mehendi bazaar economy, swing decorations, green sari market, traditional songs, Jaipur state fair; contrast urban mall celebrations vs rural traditions; women\'s health angle' },
+  { date:'2026-08-19', label:'Kajali Teej (Badi Teej) 2026', type:'local_raj', region:'RAJ', color:'#16a34a', angle:'Udaipur, Bundi, Bikaner processions — married women fasting traditions, local fair economy, social media vs tradition angle; Bundi Kajali Teej is most famous in Rajasthan' },
+  { date:'2026-10-27', label:'Pushkar Camel Fair 2026 (Kartik Purnima)', type:'local_raj', region:'RAJ', color:'#f97316', angle:'World\'s largest camel fair — livestock trade volume, foreign tourists, tent city economy, holy dip at Pushkar Lake, Brahma temple; traders from Rajasthan, Haryana, Gujarat; animal welfare angle' },
+  { date:'2026-11-01', label:'Ranthambore Wildlife Week', type:'local_raj', region:'RAJ', color:'#16a34a', angle:'Tiger census results, tourism numbers, human-wildlife conflict in buffer zones, tribal displacement for tiger reserve expansion, Project Tiger success story' },
+
+  // ── Hyperlocal 2026: Madhya Pradesh ──────────────────────────────────────
+  { date:'2026-02-20', label:'Khajuraho Dance Festival 2026', type:'local_mp', region:'MP', color:'#8b5cf6', angle:'6-day Khajuraho festival — classical dance forms against UNESCO heritage temple backdrop; tourism boost, hotel revenue, artist profiles, local economy, international performers' },
+  { date:'2026-02-27', label:'Orchha Festival 2026', type:'local_mp', region:'MP', color:'#8b5cf6', angle:'Heritage fest at Orchha — Bundela architecture, Ram Raja temple unique story (Ram worshipped as king), light & sound show, local guide economy, MP tourism data' },
+  { date:'2026-07-16', label:'Ustad Alauddin Khan Samaroh, Maihar', type:'local_mp', region:'MP', color:'#8b5cf6', angle:'Annual music festival at Maihar Rewa — Ravi Shankar\'s guru tribute, Maihar gharana, classical music revival, women musicians, Maihar town profile' },
+  { date:'2026-11-28', label:'Tansen Samaroh 2026, Gwalior', type:'local_mp', region:'MP', color:'#8b5cf6', angle:'Akbar\'s legendary court singer Tansen\'s birth festival — Gwalior fort setting, classical music, Dhrupad tradition, Gwalior gharana story; tourism angle; UNESCO intangible heritage push' },
+  { date:'2026-12-02', label:'Bhopal Gas Tragedy 42nd Year', type:'local_mp', region:'MP', color:'#374151', angle:'42 years since Dec 2, 1984 — gas victims still waiting for justice; contaminated water in Bhopal; health data of next generation; SC case status; Dow Chemical, UCC compensation story' },
+
+  // ── Hyperlocal 2026: Chhattisgarh ─────────────────────────────────────────
+  { date:'2026-02-12', label:'Rajim Kumbh Mela 2026 begins', type:'local_cg', region:'CG', color:'#0891b2', angle:'CG\'s own Kumbh at Triveni Sangam (Mahanadi-Pairi-Sondur), Rajim — bathing ghat rush, sadhus, trade fair, pilgrims from CG-Odisha-MP border; Rajim temple history story' },
+  { date:'2026-09-15', label:'Chakradhar Samaroh, Raigarh', type:'local_cg', region:'CG', color:'#0891b2', angle:'Annual classical music/dance festival named after Raigarh king — patronage of arts story, gharana revival, CG tribal dance influence on classical forms; tourist profile of Raigarh' },
+  { date:'2026-10-12', label:'Bastar Dussehra Special (75-day festival)', type:'local_cg', region:'CG', color:'#0891b2', angle:'World\'s longest Dussehra — 75 days starting Shravan Amavasya; no Ravana burning, unique tribal Maa Danteshwari rituals; Jagdalpur story; contrast with national Dussehra; security in Bastar' },
+  { date:'2026-12-28', label:'National Tribal Dance Festival, Raipur', type:'local_cg', region:'CG', color:'#0891b2', angle:'Annual tribal dance festival — 27+ states participate; Chhattisgarh as tribal culture hub; Adivasi identity, tradition vs modernization, costumes, drumming; govt tourism promotion data' },
+  { date:'2026-11-20', label:'Chhattisgarh Rajyotsav (CG Day) Celebration', type:'local_cg', region:'CG', color:'#0891b2', angle:'Chhattisgarh\'s statehood month peak — 25 years of separate state; rice bowl economy, mineral royalty debate, Adivasi land rights, Naxal area development, state identity pride story' },
+
+  // ── Hyperlocal 2026: MP + CG shared ──────────────────────────────────────
+  { date:'2026-03-08', label:'Narmada Jayanti 2026', type:'local_mpcg', region:'MPCG', color:'#C9A227', angle:'River\'s birth anniversary at Amarkantak — Narmada Parikrama pilgrims, river pollution data, dam displacement still unresolved, sand mining crisis, drinking water status in MP towns along Narmada' },
+  { date:'2026-11-15', label:'Janjatiya Gaurav Diwas 2026', type:'local_mpcg', region:'MPCG', color:'#C9A227', angle:'Birsa Munda 150th birth year — government\'s flagship tribal events in MP-CG; Van Adhikar Patta pending vs sanctioned; forest rights rejection data; tribal literacy gaps; self-help group stories' },
 ];
 
 /**
  * Return prominent days for a given YYYY-MM month string.
+ * regionFilter: 'RAJ' | 'MP' | 'CG' | 'MPCG' | '' (empty = all)
  */
-function getProminentDays(monthStr) {
+function getProminentDays(monthStr, regionFilter) {
   const [yr, mo] = monthStr.split('-').map(Number);
   const days = [];
+
+  // Helper: should this event be included for the requested region?
+  const matchRegion = (e) => {
+    if (!regionFilter) return true;                        // no filter → show all
+    if (!e.region)   return true;                          // national event → always show
+    if (e.region === 'ALL') return true;
+    if (e.region === regionFilter) return true;
+    // MPCG events visible to both MP and CG
+    if (e.region === 'MPCG' && (regionFilter === 'MP' || regionFilter === 'CG')) return true;
+    return false;
+  };
 
   // Recurring (MM-DD) events in this month
   RECURRING.forEach(e => {
     const [em, ed] = e.md.split('-').map(Number);
-    if (em === mo) days.push({ date: `${yr}-${String(mo).padStart(2,'0')}-${String(ed).padStart(2,'0')}`, ...e });
+    if (em === mo && matchRegion(e)) {
+      days.push({ date: `${yr}-${String(mo).padStart(2,'0')}-${String(ed).padStart(2,'0')}`, ...e });
+    }
   });
 
   // Specific 2026 events in this month
   SPECIFIC_2026.forEach(e => {
-    if (e.date.startsWith(`${yr}-${String(mo).padStart(2,'0')}-`)) {
+    if (e.date.startsWith(`${yr}-${String(mo).padStart(2,'0')}-`) && matchRegion(e)) {
       days.push(e);
     }
   });
@@ -149,6 +211,8 @@ module.exports = async function handler(req, res) {
 
   const date      = req.query.date  || yday();
   const monthStr  = req.query.month || date.slice(0, 7);
+  // Region filter for prominent days: RAJ | MP | CG | MPCG | '' (all)
+  const regionFilter = req.query.region || '';
   const yesterday = yday();
   const sevenAgo  = daysAgo(7);
 
@@ -359,7 +423,7 @@ module.exports = async function handler(req, res) {
       anniversaries,
       rndIdeas,
       coverageGaps,
-      prominentDays: getProminentDays(monthStr),
+      prominentDays: getProminentDays(monthStr, regionFilter),
     });
 
   } catch (err) {

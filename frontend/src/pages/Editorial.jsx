@@ -33,11 +33,30 @@ const TYPE_COLOR = {
   national:'#d71920', festival:'#C9A227', state:'#e8843a',
   media:'#7c3aed', health:'#16a34a', environment:'#0891b2',
   sports:'#3b82f6', social:'#6b7280',
+  // Hyperlocal state types
+  local_raj:'#f97316', local_mp:'#8b5cf6', local_cg:'#0891b2', local_mpcg:'#C9A227',
 };
 const DOT_LABEL = {
   national:'National', festival:'Festival', state:'State Event',
   media:'Media', health:'Health', environment:'Environment',
   sports:'Sports', social:'Social',
+  local_raj:'🟠 Rajasthan', local_mp:'🟣 MP', local_cg:'🔵 CG', local_mpcg:'🟡 MP+CG',
+};
+
+// Region filter config
+const REGION_FILTERS = [
+  { id: '',     label: 'All States' },
+  { id: 'RAJ',  label: '🟠 Rajasthan', color: '#f97316' },
+  { id: 'MP',   label: '🟣 Madhya Pradesh', color: '#8b5cf6' },
+  { id: 'CG',   label: '🔵 Chhattisgarh', color: '#0891b2' },
+];
+
+// Region badge config
+const REGION_BADGE = {
+  RAJ:  { label: 'RAJ',  color: '#f97316' },
+  MP:   { label: 'MP',   color: '#8b5cf6' },
+  CG:   { label: 'CG',   color: '#0891b2' },
+  MPCG: { label: 'MP+CG',color: '#C9A227' },
 };
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -214,12 +233,22 @@ function NewsFeedTab({ anniversaries, summary }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function CalendarTab({ prominentDays, planning }) {
   const today = new Date();
-  const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [selected, setSelected] = useState(null);
+  const [viewDate,    setViewDate]    = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selected,    setSelected]    = useState(null);
+  const [regionFilter, setRegionFilter] = useState('');   // '' | 'RAJ' | 'MP' | 'CG'
 
-  // Build day map from prominentDays + planning
+  // Filter prominentDays by region
+  const filteredDays = prominentDays.filter(e => {
+    if (!regionFilter) return true;
+    if (!e.region || e.region === 'ALL') return true;
+    if (e.region === regionFilter) return true;
+    if (e.region === 'MPCG' && (regionFilter === 'MP' || regionFilter === 'CG')) return true;
+    return false;
+  });
+
+  // Build day map from filteredDays + planning
   const dayMap = {};
-  prominentDays.forEach(e => {
+  filteredDays.forEach(e => {
     if (!dayMap[e.date]) dayMap[e.date] = [];
     dayMap[e.date].push({ ...e, source: 'prominent' });
   });
@@ -251,6 +280,32 @@ function CalendarTab({ prominentDays, planning }) {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
+        {/* Region filter bar */}
+        <div className="card p-3 mb-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold mr-1" style={{ color:'var(--muted)' }}>FILTER BY STATE:</span>
+            {REGION_FILTERS.map(rf => (
+              <button key={rf.id}
+                onClick={() => setRegionFilter(rf.id)}
+                className="pill"
+                style={{
+                  background: regionFilter === rf.id
+                    ? (rf.color || '#d71920')
+                    : (rf.color ? rf.color + '18' : '#d7192018'),
+                  color:  regionFilter === rf.id ? '#fff' : (rf.color || '#d71920'),
+                  border: `1px solid ${(rf.color || '#d71920')}33`,
+                  fontWeight: regionFilter === rf.id ? 700 : 400,
+                  cursor: 'pointer',
+                }}>
+                {rf.label}
+                <span className="ml-1 opacity-70 text-xs">
+                  ({filteredDays.filter(d => rf.id === '' || !d.region || d.region === rf.id || (d.region === 'MPCG' && (rf.id==='MP'||rf.id==='CG'))).length})
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Month nav */}
         <div className="card p-4">
           <div className="flex items-center justify-between mb-4">
@@ -304,13 +359,25 @@ function CalendarTab({ prominentDays, planning }) {
           </div>
 
           {/* Legend */}
-          <div className="mt-4 flex flex-wrap gap-3 text-xs" style={{ color:'var(--muted)' }}>
-            {Object.entries(TYPE_COLOR).map(([t, c]) => (
-              <span key={t} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ background: c }} />
-                {DOT_LABEL[t]}
-              </span>
-            ))}
+          <div className="mt-4">
+            <div className="text-xs font-semibold mb-1.5" style={{ color:'var(--muted)' }}>NATIONAL / ALL STATES</div>
+            <div className="flex flex-wrap gap-3 text-xs mb-3" style={{ color:'var(--muted)' }}>
+              {['national','festival','state','media','health','environment','sports','social'].map(t => (
+                <span key={t} className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full" style={{ background: TYPE_COLOR[t] }} />
+                  {DOT_LABEL[t]}
+                </span>
+              ))}
+            </div>
+            <div className="text-xs font-semibold mb-1.5" style={{ color:'var(--muted)' }}>HYPERLOCAL EVENTS</div>
+            <div className="flex flex-wrap gap-3 text-xs" style={{ color:'var(--muted)' }}>
+              {['local_raj','local_mp','local_cg','local_mpcg'].map(t => (
+                <span key={t} className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded" style={{ background: TYPE_COLOR[t] }} />
+                  {DOT_LABEL[t]}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -331,6 +398,12 @@ function CalendarTab({ prominentDays, planning }) {
                         style={{ background:(e.color||'#888')+'18', color:e.color||'#888' }}>
                         {DOT_LABEL[e.type] || e.type}
                       </span>
+                      {e.region && REGION_BADGE[e.region] && (
+                        <span className="text-xs font-bold rounded px-1.5 py-0.5"
+                          style={{ background: REGION_BADGE[e.region].color+'22', color: REGION_BADGE[e.region].color }}>
+                          📍 {REGION_BADGE[e.region].label}
+                        </span>
+                      )}
                       {e.source === 'planning' && (
                         <span className="text-xs font-semibold rounded px-1.5 py-0.5"
                           style={{ background:'#7c3aed18', color:'#7c3aed' }}>Planning</span>
@@ -365,7 +438,15 @@ function CalendarTab({ prominentDays, planning }) {
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-semibold truncate">{events[0].label}</div>
-                        {events.length > 1 && <div className="text-xs" style={{color:'var(--muted)'}}>+{events.length-1} more</div>}
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {events[0].region && REGION_BADGE[events[0].region] && (
+                            <span className="text-xs rounded px-1 py-0.5 font-semibold"
+                              style={{ background: REGION_BADGE[events[0].region].color+'22', color: REGION_BADGE[events[0].region].color, fontSize: 10 }}>
+                              📍 {REGION_BADGE[events[0].region].label}
+                            </span>
+                          )}
+                          {events.length > 1 && <span className="text-xs" style={{color:'var(--muted)'}}>+{events.length-1} more</span>}
+                        </div>
                       </div>
                       <div className="flex gap-1">
                         {events.slice(0,3).map((e,i) => (
