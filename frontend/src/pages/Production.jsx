@@ -83,12 +83,13 @@ function DelayTooltip({ active, payload }) {
 function TelegramConfigModal({ onClose }) {
   const [recipients, setRecipients] = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [saving,     setSaving]     = useState(null);  // pan_no being saved
-  const [edits,      setEdits]      = useState({});    // { pan_no: chat_id }
+  const [saving,     setSaving]     = useState(null);
+  const [edits,      setEdits]      = useState({});
+  const [search,     setSearch]     = useState('');
 
   useEffect(() => {
     fetch('/api/production/delay-report', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('patrika_token')}` },
+      headers: { Authorization: `Bearer ${localStorage.getItem('pk_token')}` },
     })
       .then(r => r.json())
       .then(d => {
@@ -105,7 +106,7 @@ function TelegramConfigModal({ onClose }) {
     try {
       await fetch('/api/production/delay-report', {
         method:  'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('patrika_token')}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('pk_token')}` },
         body:    JSON.stringify({ pan_no, telegram_chat_id: edits[pan_no] || null }),
       });
       setRecipients(prev => prev.map(r => r.pan_no === pan_no ? { ...r, telegram_chat_id: edits[pan_no] || null } : r));
@@ -113,27 +114,53 @@ function TelegramConfigModal({ onClose }) {
     setSaving(null);
   };
 
+  const configured = recipients.filter(r => r.telegram_chat_id).length;
+  const filtered   = recipients.filter(r => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (r.EMPNAME  || '').toLowerCase().includes(q) ||
+           (r.Branch   || '').toLowerCase().includes(q) ||
+           (r.State    || '').toLowerCase().includes(q) ||
+           (r.Story_Type||'').toLowerCase().includes(q);
+  });
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="card relative z-10 max-h-[85vh] w-full max-w-2xl overflow-y-auto p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-base font-bold">Telegram Recipients — Desk Heads & REs</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-              Enter each person's Telegram Chat ID so they receive the 8 AM delay report.
-              <br />To get Chat ID: ask them to message <b>@userinfobot</b> on Telegram.
+              Enter each person's Telegram Chat ID to receive the 8 AM delay report.
+              Ask them to message <b>@userinfobot</b> on Telegram to get their Chat ID.
             </p>
           </div>
-          <button onClick={onClose} className="btn-ghost p-1.5 rounded-lg"><X size={18} /></button>
+          <button onClick={onClose} className="btn-ghost p-1.5 rounded-lg flex-shrink-0"><X size={18} /></button>
         </div>
 
+        {!loading && recipients.length > 0 && (
+          <div className="flex items-center gap-3 mb-3">
+            <input
+              className="input py-1.5 text-sm flex-1"
+              placeholder="Search name, branch, state…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <span className="text-xs whitespace-nowrap" style={{ color: 'var(--muted)' }}>
+              <Bell size={12} className="inline mr-1" style={{ color: '#10b981' }} />
+              {configured} / {recipients.length} configured
+            </span>
+          </div>
+        )}
+
         {loading ? (
-          <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--muted)' }} /></div>
+          <div className="flex justify-center py-10">
+            <Loader2 size={20} className="animate-spin" style={{ color: 'var(--muted)' }} />
+          </div>
         ) : recipients.length === 0 ? (
           <p className="text-sm py-6 text-center" style={{ color: 'var(--muted)' }}>
-            No Desk Heads or REs found in the employee table.<br />
-            Ensure <code>Story_Type</code> contains "RE" or "desk" for these employees.
+            No matching employees found.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -142,29 +169,35 @@ function TelegramConfigModal({ onClose }) {
                 <tr className="text-left text-xs" style={{ color: 'var(--muted)' }}>
                   <th className="p-2">Name</th>
                   <th className="p-2">Role</th>
-                  <th className="p-2">Branch</th>
-                  <th className="p-2">State</th>
+                  <th className="p-2">Branch · State</th>
                   <th className="p-2">Telegram Chat ID</th>
-                  <th className="p-2" />
+                  <th className="p-2 w-16" />
                 </tr>
               </thead>
               <tbody>
-                {recipients.map(r => {
+                {filtered.map(r => {
                   const hasTg  = !!(r.telegram_chat_id);
-                  const edited = edits[r.pan_no] !== (r.telegram_chat_id || '');
+                  const edited = (edits[r.pan_no] ?? '') !== (r.telegram_chat_id || '');
                   return (
                     <tr key={r.pan_no} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                      <td className="p-2 font-semibold whitespace-nowrap">{r.EMPNAME}</td>
-                      <td className="p-2 text-xs">{r.Story_Type || r.emp_designation}</td>
-                      <td className="p-2 text-xs">{r.Branch}</td>
-                      <td className="p-2 text-xs">{r.State}</td>
+                      <td className="p-2 font-semibold whitespace-nowrap text-xs">{r.EMPNAME}</td>
+                      <td className="p-2 text-xs">
+                        <span className="rounded px-1.5 py-0.5"
+                          style={{ background: r.Story_Type === 'RE' ? '#3b82f618' : '#C9A22718',
+                                   color:      r.Story_Type === 'RE' ? '#3b82f6'   : '#C9A227' }}>
+                          {r.Story_Type || r.emp_designation || '—'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs" style={{ color: 'var(--muted)' }}>
+                        {r.Branch} · {r.State}
+                      </td>
                       <td className="p-2">
                         <div className="flex items-center gap-1.5">
                           {hasTg
-                            ? <Bell size={12} style={{ color: '#10b981', flexShrink: 0 }} />
+                            ? <Bell    size={12} style={{ color: '#10b981', flexShrink: 0 }} />
                             : <BellOff size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
                           <input
-                            className="input py-1 text-xs w-36"
+                            className="input py-0.5 text-xs w-32"
                             placeholder="e.g. 123456789"
                             value={edits[r.pan_no] ?? ''}
                             onChange={e => setEdits(prev => ({ ...prev, [r.pan_no]: e.target.value }))}
@@ -181,7 +214,9 @@ function TelegramConfigModal({ onClose }) {
                             color:      edited ? '#fff' : 'var(--muted)',
                           }}
                         >
-                          {saving === r.pan_no ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                          {saving === r.pan_no
+                            ? <Loader2 size={11} className="animate-spin" />
+                            : <Save size={11} />}
                           Save
                         </button>
                       </td>
@@ -222,7 +257,7 @@ export default function Production() {
     try {
       const res = await fetch('/api/production/delay-report', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('patrika_token')}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('pk_token')}` },
         body:    JSON.stringify({ date }),
       });
       const d = await res.json();
