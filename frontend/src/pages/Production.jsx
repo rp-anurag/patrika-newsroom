@@ -180,7 +180,7 @@ function TelegramConfigModal({ onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="card relative z-10 flex flex-col max-h-[90vh] w-full max-w-2xl">
+      <div className="card relative z-10 flex flex-col max-h-[90vh] w-full max-w-3xl">
 
         {/* ── Header ── */}
         <div className="p-5 pb-0">
@@ -241,72 +241,46 @@ function TelegramConfigModal({ onClose }) {
             </div>
           </div>
 
-          {/* ── Who joined — name chips ── */}
-          {!loading && joined.length > 0 && (
-            <div className="rounded-xl p-3 mb-3" style={{ background: '#10b98112', border: '1px solid #10b98130' }}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold" style={{ color: '#10b981' }}>
-                  ✅ {joined.length} employee{joined.length > 1 ? 's' : ''} joined the bot
-                </span>
-                <button onClick={() => loadRecipients(true)}
-                  className="btn-ghost p-1 rounded-lg" title="Refresh">
-                  <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {joined.map(r => (
-                  <span key={r.pan_no}
-                    className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-                    style={{ background: '#10b98120', color: '#10b981', border: '1px solid #10b98140' }}>
-                    <Bell size={10} />
-                    {r.EMPNAME}
-                    <span className="opacity-60">· {r.Branch}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!loading && pending.length > 0 && (
-            <div className="rounded-xl p-3 mb-3" style={{ background: '#C9A22712', border: '1px solid #C9A22730' }}>
-              <span className="text-xs font-bold" style={{ color: '#C9A227' }}>
-                ⏳ {pending.length} employee{pending.length > 1 ? 's' : ''} yet to join
-              </span>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {pending.map(r => (
-                  <span key={r.pan_no}
-                    className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs"
-                    style={{ background: '#C9A22718', color: '#C9A227', border: '1px solid #C9A22730' }}>
-                    <BellOff size={10} />
-                    {r.EMPNAME}
-                    <span className="opacity-60">· {r.Branch}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Filter tabs + Search ── */}
+          {/* ── Summary counts + Refresh ── */}
           {!loading && recipients.length > 0 && (
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
-              {[
-                { id: 'all',     label: `All (${recipients.length})` },
-                { id: 'joined',  label: `✅ Joined (${joined.length})` },
-                { id: 'pending', label: `⏳ Pending (${pending.length})` },
-              ].map(tab => (
-                <button key={tab.id} onClick={() => setFilterTab(tab.id)}
-                  className="text-xs px-3 py-1.5 rounded-lg font-medium transition"
-                  style={{
-                    background: filterTab === tab.id ? 'var(--brand)' : 'var(--bg)',
-                    color:      filterTab === tab.id ? '#fff' : 'var(--muted)',
-                    border:     `1px solid ${filterTab === tab.id ? 'var(--brand)' : 'var(--border)'}`,
-                  }}>
-                  {tab.label}
-                </button>
-              ))}
-              <input className="input py-1.5 text-xs flex-1 min-w-[140px]"
-                placeholder="Search name, branch…"
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+              {/* Stat chips */}
+              <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                style={{ background: '#10b98118', color: '#10b981' }}>
+                <Bell size={12} /> {joined.length} Joined
+              </span>
+              <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                style={{ background: '#C9A22718', color: '#C9A227' }}>
+                <BellOff size={12} /> {pending.length} Pending
+              </span>
+
+              {/* Filter tabs */}
+              <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                {[
+                  { id: 'all',     label: `All (${recipients.length})` },
+                  { id: 'joined',  label: `Joined` },
+                  { id: 'pending', label: `Pending` },
+                ].map(tab => (
+                  <button key={tab.id} onClick={() => setFilterTab(tab.id)}
+                    className="text-xs px-3 py-1.5 font-medium transition"
+                    style={{
+                      background: filterTab === tab.id ? 'var(--brand)' : 'var(--surface)',
+                      color:      filterTab === tab.id ? '#fff' : 'var(--muted)',
+                    }}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search */}
+              <input className="input py-1.5 text-xs flex-1 min-w-[130px]"
+                placeholder="Search name, branch, state…"
                 value={search} onChange={e => setSearch(e.target.value)} />
+
+              <button onClick={() => loadRecipients(true)}
+                className="btn-ghost p-1.5 rounded-lg flex-shrink-0" title="Refresh list">
+                <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              </button>
             </div>
           )}
         </div>
@@ -328,60 +302,75 @@ function TelegramConfigModal({ onClose }) {
             <p className="text-sm py-6 text-center" style={{ color: 'var(--muted)' }}>
               No Desk Heads or REs found in the employee table.
             </p>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm py-6 text-center" style={{ color: 'var(--muted)' }}>No results match your search.</p>
           ) : (
             <table className="w-full text-sm">
               <thead className="sticky top-0" style={{ background: 'var(--surface)' }}>
                 <tr className="text-left text-xs border-b" style={{ color: 'var(--muted)', borderColor: 'var(--border)' }}>
-                  <th className="p-2 pb-3">Name</th>
-                  <th className="p-2 pb-3">Role</th>
-                  <th className="p-2 pb-3">Branch · State</th>
-                  <th className="p-2 pb-3">Status / Chat ID</th>
-                  <th className="p-2 pb-3 w-16" />
+                  <th className="p-2 pb-2.5">#</th>
+                  <th className="p-2 pb-2.5">Name</th>
+                  <th className="p-2 pb-2.5">Role</th>
+                  <th className="p-2 pb-2.5">Branch</th>
+                  <th className="p-2 pb-2.5">State</th>
+                  <th className="p-2 pb-2.5 text-center">Bot Status</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(r => {
-                  const hasTg  = !!(r.telegram_chat_id);
-                  const edited = (edits[r.pan_no] ?? '') !== (r.telegram_chat_id || '');
+                {/* Sort: joined first, then pending */}
+                {[...filtered].sort((a, b) => {
+                  if (a.telegram_chat_id && !b.telegram_chat_id) return -1;
+                  if (!a.telegram_chat_id && b.telegram_chat_id) return 1;
+                  return (a.EMPNAME || '').localeCompare(b.EMPNAME || '');
+                }).map((r, idx) => {
+                  const hasTg = !!(r.telegram_chat_id);
                   return (
-                    <tr key={r.pan_no} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                      <td className="p-2 font-semibold whitespace-nowrap text-xs">{r.EMPNAME}</td>
-                      <td className="p-2 text-xs">
-                        <span className="rounded px-1.5 py-0.5"
-                          style={{ background: r.Story_Type === 'RE' ? '#3b82f618' : '#C9A22718',
-                                   color:      r.Story_Type === 'RE' ? '#3b82f6'   : '#C9A227' }}>
-                          {r.Story_Type || r.emp_designation || '—'}
+                    <tr key={r.pan_no}
+                      className="border-t transition-colors"
+                      style={{
+                        borderColor: 'var(--border)',
+                        background: hasTg ? '#10b9810a' : 'transparent',
+                      }}>
+                      {/* Serial */}
+                      <td className="p-2 text-xs" style={{ color: 'var(--muted)', width: 32 }}>{idx + 1}</td>
+
+                      {/* Name */}
+                      <td className="p-2">
+                        <div className="font-semibold text-xs whitespace-nowrap">{r.EMPNAME}</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                          {r.pan_no || ''}
+                        </div>
+                      </td>
+
+                      {/* Role badge */}
+                      <td className="p-2">
+                        <span className="rounded px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap"
+                          style={{
+                            background: r.Story_Type === 'RE' ? '#3b82f618' : '#C9A22718',
+                            color:      r.Story_Type === 'RE' ? '#3b82f6'   : '#C9A227',
+                          }}>
+                          {r.Story_Type}
                         </span>
                       </td>
-                      <td className="p-2 text-xs" style={{ color: 'var(--muted)' }}>
-                        {r.Branch}<br />{r.State}
-                      </td>
-                      <td className="p-2">
+
+                      {/* Branch */}
+                      <td className="p-2 text-xs font-medium whitespace-nowrap">{r.Branch || '—'}</td>
+
+                      {/* State */}
+                      <td className="p-2 text-xs" style={{ color: 'var(--muted)' }}>{r.State || '—'}</td>
+
+                      {/* Status */}
+                      <td className="p-2 text-center">
                         {hasTg ? (
-                          <div className="flex items-center gap-1.5">
-                            <Bell size={12} style={{ color: '#10b981', flexShrink: 0 }} />
-                            <input className="input py-0.5 text-xs w-28"
-                              value={edits[r.pan_no] ?? ''}
-                              onChange={e => setEdits(p => ({ ...p, [r.pan_no]: e.target.value }))} />
-                          </div>
+                          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
+                            style={{ background: '#10b98120', color: '#10b981' }}>
+                            <Bell size={10} /> Joined
+                          </span>
                         ) : (
-                          <div className="flex items-center gap-1.5">
-                            <BellOff size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                            <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                              Not registered
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-2">
-                        {hasTg && (
-                          <button onClick={() => save(r.pan_no)}
-                            disabled={saving === r.pan_no || !edited}
-                            className="text-xs px-2 py-1 rounded font-medium flex items-center gap-1"
-                            style={{ background: edited ? 'var(--brand)' : 'var(--bg)', color: edited ? '#fff' : 'var(--muted)' }}>
-                            {saving === r.pan_no ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
-                            Save
-                          </button>
+                          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs"
+                            style={{ background: '#6b728018', color: 'var(--muted)' }}>
+                            <BellOff size={10} /> Pending
+                          </span>
                         )}
                       </td>
                     </tr>
