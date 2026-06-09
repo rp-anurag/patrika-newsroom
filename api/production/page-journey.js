@@ -81,10 +81,17 @@ module.exports = async function handler(req, res) {
   const date = req.query.date || new Date().toISOString().slice(0, 10);
 
   try {
-    const [rajRows, mpcgRows] = await Promise.all([
+    const [rajRows, mpcgRows, schedRows] = await Promise.all([
       query(JOURNEY_SQL.replace('{TABLE}', 'gmg_raj'),  [date]).catch(() => []),
       query(JOURNEY_SQL.replace('{TABLE}', 'gmg_mpcg'), [date]).catch(() => []),
+      // Fetch edition name lookup from schedule table (same as production monitor)
+      query(`SELECT UPPER(file_name) AS code, edition_name, unit, district, state, edition_type
+             FROM page_schedule_time`).catch(() => []),
     ]);
+
+    // Build lookup: UPPER(code) → schedule info
+    const schedMap = {};
+    schedRows.forEach(s => { schedMap[s.code] = s; });
 
     const rows = [
       ...rajRows .map(r => ({ ...r, region: 'RAJ'  })),
@@ -103,8 +110,20 @@ module.exports = async function handler(req, res) {
       const { edition_code, page_no, rev_no, variant, label } = parsed;
       const key = edition_code;
 
+      // Look up proper name from page_schedule_time
+      const sched = schedMap[edition_code.toUpperCase()] || {};
+
       if (!editionMap[key]) {
-        editionMap[key] = { code: edition_code, region: row.region, pageMap: {} };
+        editionMap[key] = {
+          code:         edition_code,
+          edition_name: sched.edition_name || edition_code,   // proper name
+          unit:         sched.unit         || '',
+          district:     sched.district     || '',
+          state:        sched.state        || '',
+          edition_type: sched.edition_type || '',
+          region:       row.region,
+          pageMap:      {},
+        };
       }
 
       const ed = editionMap[key];
@@ -167,8 +186,13 @@ module.exports = async function handler(req, res) {
         : 0;
 
       return {
-        code: ed.code,
-        region: ed.region,
+        code:         ed.code,
+        edition_name: ed.edition_name,
+        unit:         ed.unit,
+        district:     ed.district,
+        state:        ed.state,
+        edition_type: ed.edition_type,
+        region:       ed.region,
         pages,
         edition_first,
         edition_last,
@@ -177,7 +201,8 @@ module.exports = async function handler(req, res) {
         revised_pages,
         total_uploads,
       };
-    }).sort((a, b) => a.code.localeCompare(b.code));
+    // Sort by edition_name for friendly display order
+    }).sort((a, b) => (a.edition_name || a.code).localeCompare(b.edition_name || b.code));
 
     return res.json({ date, editions });
 

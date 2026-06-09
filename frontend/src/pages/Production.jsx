@@ -722,7 +722,8 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
     ws['!cols'] = Object.keys(rows[0]||{}).map(k => ({ wch: Math.max(k.length, 16) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'PageJourney');
-    XLSX.writeFile(wb, `page_journey_${activeEdn.code}_${date}.xlsx`);
+    const safeName = (activeEdn.edition_name || activeEdn.code).replace(/[^a-z0-9]/gi, '_');
+    XLSX.writeFile(wb, `page_journey_${safeName}_${date}.xlsx`);
   };
 
   return (
@@ -766,14 +767,17 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
           <div className="flex flex-wrap gap-2 mb-4">
             {editions.map(ed => (
               <button key={ed.code} onClick={() => setActiveEd(ed.code)}
-                className="rounded-lg px-3 py-2 text-sm transition"
+                className="rounded-lg px-3 py-2 text-sm transition text-left"
                 style={{
                   background: activeEd === ed.code ? 'var(--brand)' : 'var(--bg)',
                   color:      activeEd === ed.code ? '#fff' : 'inherit',
                   border:     `1px solid ${activeEd === ed.code ? 'var(--brand)' : 'var(--border)'}`,
                 }}>
-                <span className="font-semibold">{ed.code}</span>
-                <span className="ml-2 text-xs opacity-70">
+                <span className="font-semibold block leading-tight">
+                  {ed.edition_name || ed.code}
+                </span>
+                <span className="text-xs opacity-70 block">
+                  {ed.unit && ed.unit !== ed.edition_name ? `${ed.unit} · ` : ''}
                   {ed.total_pages}p · {ed.revised_pages > 0 ? `${ed.revised_pages} rev` : '✓'}
                 </span>
               </button>
@@ -820,7 +824,13 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
               </div>
 
               {/* Pages table */}
-              <SectionCard title={`Page Journey — ${activeEdn.code} (${sortedPages.length} pages)`}>
+              <SectionCard title={
+                <span>
+                  Page Journey — <strong>{activeEdn.edition_name || activeEdn.code}</strong>
+                  {activeEdn.unit ? <span className="ml-2 text-sm font-normal" style={{color:'var(--muted)'}}>{activeEdn.unit}{activeEdn.district ? ` · ${activeEdn.district}` : ''}</span> : null}
+                  <span className="ml-2 text-sm font-normal" style={{color:'var(--muted)'}}>({sortedPages.length} pages)</span>
+                </span>
+              }>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
