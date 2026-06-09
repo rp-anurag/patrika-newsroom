@@ -1,0 +1,265 @@
+/**
+ * CRON: Daily Page Delay Report — runs at 8:00 AM IST every day.
+ *
+ * What it does:
+ *   1. Fetches yesterday's production data (gmg_raj + gmg_mpcg editions)
+ *   2. Groups delayed editions by branch/unit
+ *   3. For each delayed branch, finds the Desk Head & RE from `user` table
+ *      whose telegram_chat_id is configured
+ *   4. Sends a formatted Telegram message to each recipient
+ *
+ * Telegram chat IDs must be stored in user.telegram_chat_id column.
+ * Story_Type matching:
+ *   - RE       : Story_Type REGEXP '\\bRE\\b'  (exact word)
+ *   - Desk Head: Story_Type LIKE '%desk%'
+ *
+ * To configure: fill TELEGRAM_BOT_TOKEN in .env, then update
+ *   telegram_chat_id for each Desk Head & RE in the user table.
+ */
+
+const cron         = require('node-cron');
+const { query }    = require('../_lib/mysql');
+const { sendMessage } = require('../_lib/telegram');
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const DELAY_WARN_MINUTES = 0;   // > 0 min = delayed
+
+// ── Production query (reuses same logic as api/production.js) ─────────────────
+const RELEASES_SQL = (tbl, region) => `
+  SELECT
+    STR_TO_DATE(LEFT(input_file, 8), '%d%m%Y')                             AS pub_date,
+    UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(input_file, '-', 2), '-', -1))   AS code,
+    MAX(date_time_pdf)                                                      AS release_time,
+    '${region}'                                                             AS region
+  FROM \`${tbl}\`
+  WHERE input_file REGEXP '^[0-9]{8}-'
+    AND date_time_pdf IS NOT NULL
+    AND STR_TO_DATE(LEFT(input_file, 8), '%d%m%Y') = ?
+  GROUP BY pub_date, code
+`;
+
+function fmtDelay(minutes) {
+  const sign = minutes < 0 ? '-' : '+';
+  const abs  = Math.abs(Math.round(minutes));
+  const h    = Math.floor(abs / 60);
+  const m    = abs % 60;
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function fmtTime(dt) {
+  if (!dt) return '—';
+  const d = new Date(dt);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function yesterday() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// ── Fetch yesterday's delayed editions grouped by unit/branch ─────────────────
+async function fetchDelayedByBranch(date) {
+  const [rajRows, mpcgRows] = await Promise.all([
+    query(RELEASES_SQL('gmg_raj',  'RAJ'),  [date]).catch(() => []),
+    query(RELEASES_SQL('gmg_mpcg', 'MPCG'), [date]).catch(() => []),
+  ]);
+  const releases = [...rajRows, ...mpcgRows];
+  if (!releases.length) return {};
+
+  const schedRows = await query(
+    `SELECT UPPER(file_name) AS code, file_name, state, unit, district,
+            edition_name, edition_type, schedule_time
+     FROM page_schedule_time`
+  );
+  const schedMap = {};
+  schedRows.forEach(s => { schedMap[s.code] = s; });
+
+  const pubDate = new Date(date);
+  const byBranch = {};   // key: unit (branch name)
+
+  releases.forEach(r => {
+    const sched = schedMap[r.code];
+    if (!sched) return;
+
+    const releaseMs = new Date(r.release_time).getTime();
+    const [sh, sm]  = (sched.schedule_time || '00:00:00').split(':').map(Number);
+    const schedDate = new Date(pubDate);
+    if (sh >= 12) schedDate.setDate(schedDate.getDate() - 1);
+    schedDate.setHours(sh, sm, 0, 0);
+    const delay_minutes = Math.round((releaseMs - schedDate.getTime()) / 60000);
+
+    if (delay_minutes <= DELAY_WARN_MINUTES) return; // on time — skip
+
+    const unit  = sched.unit  || r.code;
+    const state = sched.state || '';
+
+    if (!byBranch[unit]) byBranch[unit] = { unit, state, editions: [], total: 0 };
+    byBranch[unit].editions.push({
+      edition_name:  sched.edition_name || r.code,
+      schedule_time: sched.schedule_time,
+      release_time:  r.release_time,
+      delay_minutes,
+      delay_hhmm:   fmtDelay(delay_minutes),
+    });
+    byBranch[unit].total++;
+  });
+
+  return byBranch;
+}
+
+// ── Fetch Telegram recipients (Desk Head + RE) for a given branch ─────────────
+async function getRecipients(branch) {
+  const rows = await query(
+    `SELECT EMPNAME, Story_Type, emp_designation, Branch, State, telegram_chat_id
+     FROM \`user\`
+     WHERE Branch = ?
+       AND telegram_chat_id IS NOT NULL AND telegram_chat_id != ''
+       AND (is_emp_working = 1 OR Status IN ('Working','Active'))
+       AND (
+         Story_Type REGEXP '[[:<:]]RE[[:>:]]'
+         OR LOWER(Story_Type)      LIKE '%desk%'
+         OR LOWER(emp_designation) LIKE '%desk head%'
+         OR LOWER(emp_designation) LIKE '%regional editor%'
+       )`,
+    [branch]
+  ).catch(() => []);
+  return rows;
+}
+
+// ── Build message for one branch ──────────────────────────────────────────────
+function buildMessage(branch, state, editions, reportDate) {
+  const dateStr = new Date(reportDate).toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
+
+  const lines = [];
+  lines.push(`🔴 <b>Page Delay Report</b>`);
+  lines.push(`📍 Branch: <b>${branch}</b> · ${state}`);
+  lines.push(`📅 Date: ${dateStr}`);
+  lines.push('');
+
+  // Sort by worst delay first
+  const sorted = [...editions].sort((a, b) => b.delay_minutes - a.delay_minutes);
+  lines.push(`⚠️ <b>Delayed Editions (${sorted.length}):</b>`);
+  sorted.forEach(e => {
+    const sched   = (e.schedule_time || '').slice(0, 5);
+    const released = fmtTime(e.release_time);
+    lines.push(`📰 ${e.edition_name}`);
+    lines.push(`   Sched: ${sched}  |  Released: ${released}  |  Delay: <b>${e.delay_hhmm}</b>`);
+  });
+
+  lines.push('');
+  const maxDelay = Math.max(...editions.map(e => e.delay_minutes));
+  lines.push(`⏱ Max Delay: <b>${fmtDelay(maxDelay)}</b>`);
+  lines.push('');
+  lines.push(`<i>Auto Report · Patrika Newsroom · 8:00 AM</i>`);
+
+  return lines.join('\n');
+}
+
+// ── Main job function ─────────────────────────────────────────────────────────
+async function runDelayReport(dateOverride) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.log('[delay-report] TELEGRAM_BOT_TOKEN not set — skipping');
+    return { skipped: true, reason: 'no token' };
+  }
+
+  const date    = dateOverride || yesterday();
+  const results = { date, sent: [], failed: [], noRecipients: [], noDelays: false };
+
+  let byBranch;
+  try {
+    byBranch = await fetchDelayedByBranch(date);
+  } catch (err) {
+    console.error('[delay-report] DB error fetching editions:', err.message);
+    return { error: err.message };
+  }
+
+  const delayedBranches = Object.values(byBranch);
+  if (!delayedBranches.length) {
+    console.log(`[delay-report] No delays on ${date} — nothing to send`);
+    results.noDelays = true;
+    return results;
+  }
+
+  console.log(`[delay-report] ${date} — ${delayedBranches.length} branches delayed`);
+
+  for (const b of delayedBranches) {
+    let recipients;
+    try {
+      recipients = await getRecipients(b.unit);
+    } catch (err) {
+      console.error(`[delay-report] Cannot fetch recipients for ${b.unit}:`, err.message);
+      continue;
+    }
+
+    if (!recipients.length) {
+      results.noRecipients.push(b.unit);
+      console.log(`[delay-report] ${b.unit} — no Telegram recipients configured`);
+      continue;
+    }
+
+    const text = buildMessage(b.unit, b.state, b.editions, date);
+
+    for (const person of recipients) {
+      try {
+        const tgRes = await sendMessage(person.telegram_chat_id, text);
+        if (tgRes.ok) {
+          console.log(`[delay-report] ✅ Sent to ${person.EMPNAME} (${b.unit})`);
+          results.sent.push({ branch: b.unit, name: person.EMPNAME, chat_id: person.telegram_chat_id });
+        } else {
+          throw new Error(tgRes.description || 'Telegram error');
+        }
+        // Log to DB (non-fatal)
+        query(
+          `INSERT INTO telegram_logs (alert_id, message, chat_id, status, telegram_response)
+           VALUES (NULL, ?, ?, ?, ?)`,
+          [text, person.telegram_chat_id, 'sent', JSON.stringify(tgRes)]
+        ).catch(() => {});
+      } catch (err) {
+        console.error(`[delay-report] ❌ Failed for ${person.EMPNAME} (${b.unit}):`, err.message);
+        results.failed.push({ branch: b.unit, name: person.EMPNAME, error: err.message });
+      }
+    }
+  }
+
+  return results;
+}
+
+// ── Auto-add telegram_chat_id column if missing ───────────────────────────────
+async function ensureColumn() {
+  try {
+    await query(
+      `ALTER TABLE \`user\` ADD COLUMN \`telegram_chat_id\` VARCHAR(100) NULL DEFAULT NULL`
+    );
+    console.log('[delay-report] ✅ Added telegram_chat_id column to user table');
+  } catch (err) {
+    // Ignore "Duplicate column" — column already exists
+    if (!err.message.includes('Duplicate column') && !err.message.includes('1060')) {
+      console.warn('[delay-report] Could not add telegram_chat_id column:', err.message);
+    }
+  }
+}
+
+// ── Register cron — 8:00 AM IST every day ────────────────────────────────────
+function register() {
+  ensureColumn();   // run once on startup
+
+  // node-cron format: second(opt) minute hour day month weekday
+  // 8:00 AM IST = 8:00 AM Asia/Kolkata
+  cron.schedule('0 8 * * *', async () => {
+    console.log('[delay-report] ⏰ 8:00 AM — running daily page delay report…');
+    try {
+      const res = await runDelayReport();
+      console.log('[delay-report] Done:', JSON.stringify(res));
+    } catch (err) {
+      console.error('[delay-report] Cron error:', err.message);
+    }
+  }, { timezone: 'Asia/Kolkata' });
+
+  console.log('[delay-report] ✅ Scheduled: daily 8:00 AM IST page delay report');
+}
+
+module.exports = { register, runDelayReport };

@@ -15,9 +15,11 @@
 
 require('dotenv').config();
 
-const express = require('express');
-const path    = require('path');
-const app     = express();
+const express    = require('express');
+const path       = require('path');
+const app        = express();
+const delayReport = require('./api/cron/delay-report');
+delayReport.register();   // schedule 8 AM IST daily Telegram delay report
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
@@ -50,7 +52,8 @@ app.all('/api/dashboard',             h('./api/dashboard'));
 // ── Editorial / Production / Pages / Reports ──────────────────────────────────
 app.all('/api/editorial/feeds',       h('./api/editorial/feeds'));   // must be before /api/editorial
 app.all('/api/editorial',             h('./api/editorial'));
-app.all('/api/production',            h('./api/production'));
+app.all('/api/production/delay-report', h('./api/production/delay-report'));  // before /api/production
+app.all('/api/production',              h('./api/production'));
 app.all('/api/pages',                 h('./api/pages'));
 app.all('/api/reports',               h('./api/reports'));
 

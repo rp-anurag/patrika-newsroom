@@ -6,6 +6,7 @@ import {
 import {
   CheckCircle2, AlertTriangle, Clock, TrendingUp, Download,
   RefreshCw, Loader2, ChevronLeft, ChevronRight, AlarmClock,
+  Send, Bell, BellOff, X, Save,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../context/AppContext.jsx';
@@ -73,20 +74,157 @@ function DelayTooltip({ active, payload }) {
   );
 }
 
+// ── Telegram config modal ──────────────────────────────────────────────────────
+function TelegramConfigModal({ onClose }) {
+  const [recipients, setRecipients] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [saving,     setSaving]     = useState(null);  // pan_no being saved
+  const [edits,      setEdits]      = useState({});    // { pan_no: chat_id }
+
+  useEffect(() => {
+    fetch('/api/production/delay-report', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('patrika_token')}` },
+    })
+      .then(r => r.json())
+      .then(d => {
+        setRecipients(d.recipients || []);
+        const init = {};
+        (d.recipients || []).forEach(r => { init[r.pan_no] = r.telegram_chat_id || ''; });
+        setEdits(init);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async (pan_no) => {
+    setSaving(pan_no);
+    try {
+      await fetch('/api/production/delay-report', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('patrika_token')}` },
+        body:    JSON.stringify({ pan_no, telegram_chat_id: edits[pan_no] || null }),
+      });
+      setRecipients(prev => prev.map(r => r.pan_no === pan_no ? { ...r, telegram_chat_id: edits[pan_no] || null } : r));
+    } catch (e) { alert('Error: ' + e.message); }
+    setSaving(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="card relative z-10 max-h-[85vh] w-full max-w-2xl overflow-y-auto p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold">Telegram Recipients — Desk Heads & REs</h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+              Enter each person's Telegram Chat ID so they receive the 8 AM delay report.
+              <br />To get Chat ID: ask them to message <b>@userinfobot</b> on Telegram.
+            </p>
+          </div>
+          <button onClick={onClose} className="btn-ghost p-1.5 rounded-lg"><X size={18} /></button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--muted)' }} /></div>
+        ) : recipients.length === 0 ? (
+          <p className="text-sm py-6 text-center" style={{ color: 'var(--muted)' }}>
+            No Desk Heads or REs found in the employee table.<br />
+            Ensure <code>Story_Type</code> contains "RE" or "desk" for these employees.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs" style={{ color: 'var(--muted)' }}>
+                  <th className="p-2">Name</th>
+                  <th className="p-2">Role</th>
+                  <th className="p-2">Branch</th>
+                  <th className="p-2">State</th>
+                  <th className="p-2">Telegram Chat ID</th>
+                  <th className="p-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {recipients.map(r => {
+                  const hasTg  = !!(r.telegram_chat_id);
+                  const edited = edits[r.pan_no] !== (r.telegram_chat_id || '');
+                  return (
+                    <tr key={r.pan_no} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                      <td className="p-2 font-semibold whitespace-nowrap">{r.EMPNAME}</td>
+                      <td className="p-2 text-xs">{r.Story_Type || r.emp_designation}</td>
+                      <td className="p-2 text-xs">{r.Branch}</td>
+                      <td className="p-2 text-xs">{r.State}</td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1.5">
+                          {hasTg
+                            ? <Bell size={12} style={{ color: '#10b981', flexShrink: 0 }} />
+                            : <BellOff size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
+                          <input
+                            className="input py-1 text-xs w-36"
+                            placeholder="e.g. 123456789"
+                            value={edits[r.pan_no] ?? ''}
+                            onChange={e => setEdits(prev => ({ ...prev, [r.pan_no]: e.target.value }))}
+                          />
+                        </div>
+                      </td>
+                      <td className="p-2">
+                        <button
+                          onClick={() => save(r.pan_no)}
+                          disabled={saving === r.pan_no || !edited}
+                          className="text-xs px-2 py-1 rounded font-medium flex items-center gap-1"
+                          style={{
+                            background: edited ? 'var(--brand)' : 'var(--bg)',
+                            color:      edited ? '#fff' : 'var(--muted)',
+                          }}
+                        >
+                          {saving === r.pan_no ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                          Save
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Production() {
   const { t } = useApp();
-  const [date,    setDate]    = useState(today());
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [region,  setRegion]  = useState('ALL'); // ALL | RAJ | MPCG
-  const [search,  setSearch]  = useState('');
+  const [date,       setDate]       = useState(today());
+  const [data,       setData]       = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [region,     setRegion]     = useState('ALL'); // ALL | RAJ | MPCG
+  const [search,     setSearch]     = useState('');
+  const [sending,    setSending]    = useState(false);   // Telegram send state
+  const [sendResult, setSendResult] = useState(null);    // { sent, failed, noRecipients }
+  const [showConfig, setShowConfig] = useState(false);   // Telegram config modal
 
   const load = (d) => {
     setLoading(true);
     api.production(d)
       .then(setData)
       .finally(() => setLoading(false));
+  };
+
+  const sendDelayReport = async () => {
+    setSending(true); setSendResult(null);
+    try {
+      const res = await fetch('/api/production/delay-report', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('patrika_token')}` },
+        body:    JSON.stringify({ date }),
+      });
+      const d = await res.json();
+      setSendResult(d);
+    } catch (e) {
+      setSendResult({ ok: false, error: e.message });
+    }
+    setSending(false);
   };
 
   useEffect(() => { load(date); }, [date]);
@@ -202,7 +340,56 @@ export default function Production() {
         <button onClick={downloadExcel} className="btn-ghost flex items-center gap-1.5 text-sm" disabled={!editions.length}>
           <Download size={14} /> Excel
         </button>
+
+        {/* Telegram send controls */}
+        <div className="flex items-center gap-1 ml-auto">
+          <button
+            onClick={sendDelayReport}
+            disabled={sending || !editions.length}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition"
+            style={{ background: '#0088cc', color: '#fff', opacity: sending || !editions.length ? 0.6 : 1 }}
+            title="Send delay report to Desk Heads & REs via Telegram"
+          >
+            {sending
+              ? <><Loader2 size={14} className="animate-spin" /> Sending…</>
+              : <><Send size={14} /> Send Report</>}
+          </button>
+          <button
+            onClick={() => setShowConfig(true)}
+            className="btn-ghost p-1.5 rounded-lg"
+            title="Configure Telegram recipients"
+          >
+            <Bell size={15} />
+          </button>
+        </div>
       </div>
+
+      {/* Send result banner */}
+      {sendResult && (
+        <div className="mb-4 rounded-xl p-3 text-sm flex items-start gap-3"
+          style={{ background: sendResult.ok === false ? '#d7192015' : '#10b98115',
+                   border: `1px solid ${sendResult.ok === false ? '#d7192030' : '#10b98130'}` }}>
+          <div className="flex-1">
+            {sendResult.noDelays && <span>✅ No delays found for {date} — nothing sent.</span>}
+            {sendResult.skipped  && <span>⚠️ Telegram bot token not configured. Set TELEGRAM_BOT_TOKEN in .env</span>}
+            {sendResult.error    && <span>❌ Error: {sendResult.error}</span>}
+            {sendResult.sent?.length > 0 && (
+              <span>✅ Sent to <strong>{sendResult.sent.length}</strong> recipients: {sendResult.sent.map(s => s.name).join(', ')}</span>
+            )}
+            {sendResult.failed?.length > 0 && (
+              <span className="block mt-1" style={{ color: '#d71920' }}>
+                ❌ Failed: {sendResult.failed.map(f => `${f.name} (${f.error})`).join(', ')}
+              </span>
+            )}
+            {sendResult.noRecipients?.length > 0 && (
+              <span className="block mt-1" style={{ color: '#C9A227' }}>
+                ⚠️ No Telegram ID configured for: {sendResult.noRecipients.join(', ')} — use 🔔 to set up
+              </span>
+            )}
+          </div>
+          <button onClick={() => setSendResult(null)} className="flex-shrink-0"><X size={14} /></button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-24 gap-2" style={{ color: 'var(--muted)' }}>
@@ -315,6 +502,8 @@ export default function Production() {
           </SectionCard>
         </>
       )}
+
+      {showConfig && <TelegramConfigModal onClose={() => setShowConfig(false)} />}
     </div>
   );
 }
