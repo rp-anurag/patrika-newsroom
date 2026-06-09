@@ -328,8 +328,6 @@ function OverviewTab({ emps, filtered, rets, loading, ageBuckets, deptBuckets,
                   <th className="p-2">Branch</th>
                   <th className="p-2">State</th>
                   <th className="p-2">Age</th>
-                  {canViewHr() && <><th className="p-2">Gross</th><th className="p-2">PLI</th><th className="p-2">Total</th></>}
-                  {canEditHr() && <th className="p-2" />}
                 </tr>
               </thead>
               <tbody>
@@ -351,18 +349,6 @@ function OverviewTab({ emps, filtered, rets, loading, ageBuckets, deptBuckets,
                           {age ?? '—'}
                         </span>
                       </td>
-                      {canViewHr() && (
-                        <>
-                          <td className="p-2">₹{Number(e.gross_salary || 0).toLocaleString('en-IN')}</td>
-                          <td className="p-2">₹{Number(e.emp_pli || 0).toLocaleString('en-IN')}</td>
-                          <td className="p-2 font-semibold">₹{Number(e.g_total || 0).toLocaleString('en-IN')}</td>
-                        </>
-                      )}
-                      {canEditHr() && (
-                        <td className="p-2">
-                          <button className="text-xs font-semibold hover:opacity-70" style={{ color: 'var(--brand)' }} onClick={() => onEdit({ ...e })}>Edit</button>
-                        </td>
-                      )}
                     </tr>
                   );
                 })}
