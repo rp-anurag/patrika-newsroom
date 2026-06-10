@@ -23,6 +23,7 @@
 
 const bcrypt    = require('bcryptjs');
 const { query } = require('../_lib/mysql');
+const { ensureColumn }           = require('../_lib/schema');
 const { requireRole }            = require('../_lib/auth');
 const { setCors, handleOptions } = require('../_lib/cors');
 
@@ -42,25 +43,38 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // Ensure is_active column exists in users table
-    await ensureIsActiveColumn();
+    // Ensure is_active column exists; remember whether we can use it
+    const hasIsActive = await ensureColumn('users', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1');
 
-    // Pull eligible employees from HR table
-    const employees = await query(
-      `SELECT pan_no, EMPNAME, Story_Type, State, Branch,
-              COALESCE(is_emp_working, 0) AS is_emp_working
-       FROM \`user\`
-       WHERE Story_Type IN ('State Head', 'RE')
-         AND pan_no IS NOT NULL
-         AND pan_no != ''
-       ORDER BY EMPNAME`
-    );
-
-    if (!employees.length) {
-      return res.json({ ok: true, total: 0, created: 0, updated: 0, details: [] });
+    // ── Pull eligible employees from HR table ─────────────────────────────
+    let employees;
+    try {
+      employees = await query(
+        `SELECT pan_no, EMPNAME, Story_Type, State, Branch,
+                COALESCE(is_emp_working, 0) AS is_emp_working
+         FROM \`user\`
+         WHERE Story_Type IN ('State Head', 'RE')
+           AND pan_no IS NOT NULL
+           AND pan_no != ''
+         ORDER BY EMPNAME`
+      );
+    } catch (hrErr) {
+      // Provide a helpful error if the HR table doesn't exist or the column is missing
+      console.error('[users/sync] HR table query failed:', hrErr.message);
+      return res.status(500).json({
+        error: `Could not read HR employee table: ${hrErr.message}. ` +
+               `Check that the \`user\` table exists in database "${process.env.MYSQL_DATABASE || 'editorial_reports'}".`,
+      });
     }
 
-    // Load existing usernames for fast lookup
+    if (!employees.length) {
+      return res.json({
+        ok: true, total: 0, created: 0, updated: 0, details: [],
+        note: 'No employees found with Story_Type IN (\'State Head\', \'RE\') and a non-empty pan_no.',
+      });
+    }
+
+    // ── Load existing usernames for fast lookup ───────────────────────────
     const existingRows = await query('SELECT id, username FROM users');
     const existingSet  = new Set(existingRows.map(r => r.username));
 
@@ -77,51 +91,57 @@ module.exports = async (req, res) => {
       const is_active = emp.is_emp_working === 1 ? 1 : 0;
 
       if (existingSet.has(username)) {
-        // Update — never touch password_hash
-        await query(
-          `UPDATE users
-              SET name      = ?,
-                  role      = ?,
-                  state     = ?,
-                  branch    = ?,
-                  is_active = ?
-            WHERE username  = ?`,
-          [name, role, state, branch, is_active, username]
-        );
+        // ── Update — never touch password_hash ───────────────────────────
+        if (hasIsActive) {
+          await query(
+            `UPDATE users
+                SET name      = ?,
+                    role      = ?,
+                    state     = ?,
+                    branch    = ?,
+                    is_active = ?
+              WHERE username  = ?`,
+            [name, role, state, branch, is_active, username]
+          );
+        } else {
+          await query(
+            `UPDATE users
+                SET name   = ?,
+                    role   = ?,
+                    state  = ?,
+                    branch = ?
+              WHERE username = ?`,
+            [name, role, state, branch, username]
+          );
+        }
         updated++;
         details.push({ action: 'updated', username, name, role, state, branch, is_active });
       } else {
-        // Create — initial password = PAN number
+        // ── Create — initial password = PAN number ────────────────────────
         const password_hash = await bcrypt.hash(username, 10);
-        await query(
-          `INSERT INTO users (username, name, password_hash, role, state, branch, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [username, name, password_hash, role, state, branch, is_active]
-        );
-        existingSet.add(username); // prevent duplicates if pan_no repeated
+        if (hasIsActive) {
+          await query(
+            `INSERT INTO users (username, name, password_hash, role, state, branch, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [username, name, password_hash, role, state, branch, is_active]
+          );
+        } else {
+          await query(
+            `INSERT INTO users (username, name, password_hash, role, state, branch)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [username, name, password_hash, role, state, branch]
+          );
+        }
+        existingSet.add(username); // prevent duplicates if pan_no repeated in HR
         created++;
         details.push({ action: 'created', username, name, role, state, branch, is_active });
       }
     }
 
-    return res.json({
-      ok:      true,
-      total:   employees.length,
-      created,
-      updated,
-      details,
-    });
+    return res.json({ ok: true, total: employees.length, created, updated, details });
 
   } catch (err) {
     console.error('[users/sync]', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
-
-async function ensureIsActiveColumn() {
-  try {
-    await query(`ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1`);
-  } catch (e) {
-    if (!e.message.includes('Duplicate column') && !e.message.includes('1060')) throw e;
-  }
-}
