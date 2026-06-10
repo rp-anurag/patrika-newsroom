@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertTriangle, Clock, TrendingUp, Download,
   RefreshCw, Loader2, ChevronLeft, ChevronRight, AlarmClock,
   Send, Bell, BellOff, X, Save, FileStack, LayoutList,
-  ChevronDown, ChevronUp, GitBranch,
+  ChevronDown, ChevronUp, GitBranch, BarChart2, MessageSquare, Trash2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../context/AppContext.jsx';
@@ -31,6 +31,24 @@ function fmtTime(dt) {
 function fmtSched(t) {
   if (!t) return '—';
   return t.slice(0, 5); // "22:30"
+}
+
+// Format integer minutes → "+hh:mm" / "-hh:mm"
+function fmtDelay(minutes) {
+  const sign = minutes < 0 ? '-' : '+';
+  const abs  = Math.abs(Math.round(minutes));
+  const h    = Math.floor(abs / 60);
+  const m    = abs % 60;
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// Short day label from date string: { day: 'Mon', num: '09' }
+function dayLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return {
+    day: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()],
+    num: String(d.getDate()).padStart(2, '0'),
+  };
 }
 
 function delayColor(status) {
@@ -76,6 +94,115 @@ function DelayTooltip({ active, payload }) {
         <span className="font-bold" style={{ color: delayColor(d.status) }}>{d.delay_hhmm}</span>
       </div>
     </div>
+  );
+}
+
+// ── Delay Reasons Card ────────────────────────────────────────────────────────
+function DelayReasonsCard({ date, reasons, loading, onRefresh, onDelete }) {
+  const { user } = useApp();
+  const isAdmin  = user?.role === 'Admin';
+
+  function fmtSubmittedAt(dt) {
+    if (!dt) return '—';
+    const d = new Date(dt);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  // Always show section (even empty — to signal that reasons CAN be submitted)
+  return (
+    <SectionCard
+      className="mt-5"
+      title={
+        <span className="flex items-center gap-2">
+          <MessageSquare size={15} />
+          Delay Reasons
+          <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>
+            — submitted via Telegram
+          </span>
+          {reasons.length > 0 && (
+            <span className="ml-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+              style={{ background: '#0088cc18', color: '#0088cc' }}>
+              {reasons.length}
+            </span>
+          )}
+          <button onClick={onRefresh} className="ml-auto btn-ghost p-1 rounded-lg" title="Refresh reasons">
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </span>
+      }
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 py-4 text-sm" style={{ color: 'var(--muted)' }}>
+          <Loader2 size={15} className="animate-spin" /> Loading reasons…
+        </div>
+      ) : reasons.length === 0 ? (
+        <div className="py-5 text-center text-sm" style={{ color: 'var(--muted)' }}>
+          <MessageSquare size={24} className="mx-auto mb-2 opacity-30" />
+          <p>No delay reasons submitted for <strong>{date}</strong></p>
+          <p className="text-xs mt-1">
+            Desk Heads &amp; REs can reply to the Telegram report with{' '}
+            <code className="rounded px-1 py-0.5 text-xs" style={{ background: 'var(--bg)' }}>
+              REASON &lt;text&gt;
+            </code>
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs" style={{ color: 'var(--muted)' }}>
+                <th className="p-2">#</th>
+                <th className="p-2">Branch</th>
+                <th className="p-2">State</th>
+                <th className="p-2">Submitted By</th>
+                <th className="p-2">Time</th>
+                <th className="p-2">Reason</th>
+                {isAdmin && <th className="p-2 w-8" />}
+              </tr>
+            </thead>
+            <tbody>
+              {reasons.map((r, i) => (
+                <tr key={r.id}
+                  className="border-t"
+                  style={{ borderColor: 'var(--border)' }}>
+                  <td className="p-2 text-xs" style={{ color: 'var(--muted)' }}>{i + 1}</td>
+                  <td className="p-2">
+                    <span className="font-semibold text-xs">{r.branch || '—'}</span>
+                  </td>
+                  <td className="p-2 text-xs" style={{ color: 'var(--muted)' }}>{r.state || '—'}</td>
+                  <td className="p-2 text-xs">
+                    <span className="flex items-center gap-1">
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                        style={{ background: '#0088cc20', color: '#0088cc' }}>
+                        {(r.submitted_by_name || '?')[0].toUpperCase()}
+                      </span>
+                      {r.submitted_by_name || '—'}
+                    </span>
+                  </td>
+                  <td className="p-2 text-xs font-mono" style={{ color: 'var(--muted)' }}>
+                    {fmtSubmittedAt(r.submitted_at)}
+                  </td>
+                  <td className="p-2 text-xs max-w-xs">
+                    <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium"
+                      style={{ background: '#0088cc10', color: 'var(--text)', border: '1px solid #0088cc20' }}>
+                      💬 {r.reason}
+                    </span>
+                  </td>
+                  {isAdmin && (
+                    <td className="p-2">
+                      <button onClick={() => onDelete(r.id)}
+                        className="btn-ghost p-1 rounded" title="Delete reason">
+                        <Trash2 size={13} style={{ color: 'var(--muted)' }} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
@@ -397,12 +524,36 @@ export default function Production() {
   const [sending,    setSending]    = useState(false);
   const [sendResult, setSendResult] = useState(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [reasons,    setReasons]    = useState([]);
+  const [reasonsLoading, setReasonsLoading] = useState(false);
 
   const load = (d) => {
     setLoading(true);
     api.production(d)
       .then(setData)
       .finally(() => setLoading(false));
+  };
+
+  const loadReasons = (d) => {
+    setReasonsLoading(true);
+    const token = localStorage.getItem('pk_token');
+    fetch(`/api/production/delay-reasons?date=${d}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.error); }))
+      .then(d => setReasons(d.reasons || []))
+      .catch(() => setReasons([]))
+      .finally(() => setReasonsLoading(false));
+  };
+
+  const deleteReason = async (id) => {
+    if (!window.confirm('Delete this reason?')) return;
+    const token = localStorage.getItem('pk_token');
+    await fetch(`/api/production/delay-reasons?id=${id}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => {});
+    setReasons(prev => prev.filter(r => r.id !== id));
   };
 
   const sendDelayReport = async () => {
@@ -421,7 +572,7 @@ export default function Production() {
     setSending(false);
   };
 
-  useEffect(() => { load(date); }, [date]);
+  useEffect(() => { load(date); loadReasons(date); }, [date]);
 
   const shiftDate = (n) => {
     const d = new Date(date);
@@ -498,6 +649,7 @@ export default function Production() {
         {[
           { id: 'monitor', label: 'Production Monitor', icon: LayoutList },
           { id: 'journey', label: 'Page Journey',       icon: GitBranch  },
+          { id: 'weekly',  label: 'Weekly Trend',       icon: BarChart2  },
         ].map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setActiveTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
@@ -514,8 +666,11 @@ export default function Production() {
       {/* ── Page Journey tab ─────────────────────────────────────────────── */}
       {activeTab === 'journey' && <PageJourneyTab date={date} setDate={setDate} shiftDate={shiftDate} />}
 
+      {/* ── Weekly Trend tab ─────────────────────────────────────────────── */}
+      {activeTab === 'weekly' && <WeeklyTrendTab date={date} setDate={setDate} shiftDate={shiftDate} />}
+
       {/* ── Production Monitor tab ───────────────────────────────────────── */}
-      {activeTab !== 'journey' && <>
+      {activeTab !== 'journey' && activeTab !== 'weekly' && <>
 
       {/* ── Date nav + region filter ─────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
@@ -749,9 +904,18 @@ export default function Production() {
         </>
       )}
 
+      {/* ── Delay Reasons section ────────────────────────────────────────────── */}
+      <DelayReasonsCard
+        date={date}
+        reasons={reasons}
+        loading={reasonsLoading}
+        onRefresh={() => loadReasons(date)}
+        onDelete={deleteReason}
+      />
+
       {showConfig && <TelegramConfigModal onClose={() => setShowConfig(false)} />}
 
-      </> /* end Production Monitor tab */}
+      </> /* end Production Monitor tab */ }
     </div>
   );
 }
@@ -902,8 +1066,9 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
 
   useEffect(() => { load(date); }, [date]);
 
-  const editions  = journeyData?.editions || [];
-  const activeEdn = editions.find(e => e.code === activeEd) || editions[0];
+  const editions     = journeyData?.editions || [];
+  const activeEdn    = editions.find(e => e.code === activeEd) || editions[0];
+
 
   // Sort pages
   const sortedPages = useMemo(() => {
@@ -956,6 +1121,22 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
         <button onClick={() => load(date)} className="btn-ghost p-1.5" title="Refresh">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
         </button>
+        {/* Edition dropdown */}
+        {editions.length > 0 && (
+          <select
+            value={activeEd || ''}
+            onChange={e => setActiveEd(e.target.value)}
+            className="input py-1.5 text-sm flex-1 min-w-[200px] max-w-sm"
+          >
+            {editions.map(ed => (
+              <option key={ed.code} value={ed.code}>
+                {ed.edition_name || ed.code}
+                {ed.unit && ed.unit !== ed.edition_name ? ` — ${ed.unit}` : ''}
+                {ed.district ? ` (${ed.district})` : ''}
+              </option>
+            ))}
+          </select>
+        )}
         {activeEdn && (
           <button onClick={downloadJourney} className="btn-ghost flex items-center gap-1.5 text-sm ml-auto">
             <Download size={14} /> Excel
@@ -979,27 +1160,6 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
         </div>
       ) : (
         <>
-          {/* Edition tabs */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            {editions.map(ed => (
-              <button key={ed.code} onClick={() => setActiveEd(ed.code)}
-                className="rounded-lg px-3 py-2 text-sm transition text-left"
-                style={{
-                  background: activeEd === ed.code ? 'var(--brand)' : 'var(--bg)',
-                  color:      activeEd === ed.code ? '#fff' : 'inherit',
-                  border:     `1px solid ${activeEd === ed.code ? 'var(--brand)' : 'var(--border)'}`,
-                }}>
-                <span className="font-semibold block leading-tight">
-                  {ed.edition_name || ed.code}
-                </span>
-                <span className="text-xs opacity-70 block">
-                  {ed.unit && ed.unit !== ed.edition_name ? `${ed.unit} · ` : ''}
-                  {ed.total_pages}{ed.scheduled_pages > 0 ? `/${ed.scheduled_pages}` : ''} pages
-                  {' · '}{ed.revised_pages > 0 ? `${ed.revised_pages} rev` : '✓'}
-                </span>
-              </button>
-            ))}
-          </div>
 
           {activeEdn && (
             <>
@@ -1095,6 +1255,467 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
                 </div>
               </SectionCard>
             </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WEEKLY TREND TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const HEAT = {
+  ontime: { bg: '#10b98118', text: '#10b981' },
+  warn:   { bg: '#C9A22720', text: '#C9A227' },
+  late:   { bg: '#d7192018', text: '#d71920' },
+};
+
+function HeatCell({ d }) {
+  if (!d) return (
+    <td className="px-1 py-2 text-center text-xs border-l"
+      style={{ color: 'var(--muted)', borderColor: 'var(--border)', background: 'transparent' }}>—</td>
+  );
+  const c = HEAT[d.status] || HEAT.late;
+  return (
+    <td className="px-1 py-2 text-center border-l"
+      title={`Sched: ${(d.schedule_time||'').slice(0,5)}  Released: ${
+        d.release_time ? new Date(d.release_time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}) : '—'
+      }  Delay: ${d.delay_hhmm}`}
+      style={{ background: c.bg, borderColor: 'var(--border)' }}>
+      <span className="text-xs font-bold font-mono" style={{ color: c.text }}>{d.delay_hhmm}</span>
+    </td>
+  );
+}
+
+function WeeklyTrendTab({ date, setDate, shiftDate }) {
+  const [days,       setDays]       = useState(7);
+  const [region,     setRegion]     = useState('ALL');
+  const [search,     setSearch]     = useState('');
+  const [sortBy,     setSortBy]     = useState('avg');  // avg | max | late | name
+  const [trendData,  setTrendData]  = useState(null);
+  const [loading,    setLoading]    = useState(false);
+  const [error,      setError]      = useState('');
+  const [selectedEd, setSelectedEd] = useState(null);  // code of clicked row
+  const [sending,    setSending]    = useState(false);
+  const [sendResult, setSendResult] = useState(null);
+
+  const sendAppreciation = async () => {
+    setSending(true); setSendResult(null);
+    try {
+      const res = await fetch('/api/production/weekly-appreciation', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('pk_token')}` },
+        body:    JSON.stringify({ endDate: date }),
+      });
+      const d = await res.json();
+      setSendResult(d);
+    } catch (e) {
+      setSendResult({ ok: false, error: e.message });
+    }
+    setSending(false);
+  };
+
+  const load = useCallback((endDate, numDays) => {
+    setLoading(true); setError('');
+    const token = localStorage.getItem('pk_token');
+    fetch(`/api/production/weekly-trend?endDate=${endDate}&days=${numDays}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.error || `HTTP ${r.status}`); }))
+      .then(data => { setTrendData(data); setSelectedEd(null); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(date, days); }, [date, days]);
+
+  const allEditions = trendData?.editions || [];
+  const dates       = trendData?.dates    || [];
+
+  // Filter + sort
+  const editions = useMemo(() => {
+    let list = allEditions;
+    if (region !== 'ALL') list = list.filter(e => e.region === region);
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(e =>
+        (e.edition_name || '').toLowerCase().includes(q) ||
+        (e.unit         || '').toLowerCase().includes(q) ||
+        (e.district     || '').toLowerCase().includes(q) ||
+        (e.state        || '').toLowerCase().includes(q)
+      );
+    }
+    const s = [...list];
+    if (sortBy === 'avg')  s.sort((a, b) => b.avg_delay    - a.avg_delay);
+    if (sortBy === 'max')  s.sort((a, b) => b.max_delay    - a.max_delay);
+    if (sortBy === 'late') s.sort((a, b) => b.delayed_days - a.delayed_days);
+    if (sortBy === 'name') s.sort((a, b) => (a.edition_name||'').localeCompare(b.edition_name||''));
+    return s;
+  }, [allEditions, region, search, sortBy]);
+
+  // Overall summary
+  const stats = useMemo(() => {
+    if (!editions.length) return null;
+    const cells   = editions.flatMap(e => Object.values(e.days));
+    const delayed = cells.filter(c => c.status !== 'ontime').length;
+    const total   = cells.length;
+    const worst   = [...editions].sort((a, b) => b.avg_delay - a.avg_delay)[0];
+    return { edCount: editions.length, delayed, total, pct: total ? Math.round(delayed/total*100) : 0, worst };
+  }, [editions]);
+
+  // Chart data for selected edition
+  const chartData = useMemo(() => {
+    if (!selectedEd) return [];
+    const ed = allEditions.find(e => e.code === selectedEd);
+    if (!ed) return [];
+    return dates.map(dt => {
+      const lbl = dayLabel(dt);
+      const d   = ed.days[dt];
+      return {
+        label:  `${lbl.day}\n${lbl.num}`,
+        date:   `${lbl.day} ${lbl.num}`,
+        delay:  d ? d.delay_minutes : null,
+        hhmm:   d ? d.delay_hhmm   : '—',
+        status: d ? d.status        : 'none',
+      };
+    });
+  }, [selectedEd, allEditions, dates]);
+
+  const selEd = selectedEd ? allEditions.find(e => e.code === selectedEd) : null;
+
+  return (
+    <div>
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+
+        {/* Date = end date */}
+        <div className="flex items-center gap-1">
+          <button onClick={() => shiftDate(-1)} className="btn-ghost p-1.5"><ChevronLeft size={16} /></button>
+          <div className="flex flex-col items-center">
+            <input type="date" value={date} max={today()}
+              onChange={e => setDate(e.target.value)}
+              className="input py-1.5 text-sm font-semibold" />
+            <span className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>End Date</span>
+          </div>
+          <button onClick={() => shiftDate(1)} className="btn-ghost p-1.5" disabled={date >= today()}><ChevronRight size={16} /></button>
+        </div>
+
+        {/* Days range */}
+        <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+          {[7, 14, 30].map(n => (
+            <button key={n} onClick={() => setDays(n)}
+              className="px-3 py-1.5 text-xs font-semibold transition"
+              style={{ background: days===n ? 'var(--brand)' : 'var(--surface)', color: days===n ? '#fff' : 'var(--muted)' }}>
+              {n}D
+            </button>
+          ))}
+        </div>
+
+        {/* Region */}
+        <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+          {[['ALL','All'],['RAJ','RAJ'],['MPCG','MPCG']].map(([v, l]) => (
+            <button key={v} onClick={() => setRegion(v)}
+              className="px-3 py-1.5 text-xs font-semibold transition"
+              style={{ background: region===v ? 'var(--brand)' : 'var(--surface)', color: region===v ? '#fff' : 'var(--muted)' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <input type="text" placeholder="Search edition / unit…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="input py-1.5 text-xs flex-1 min-w-[150px]" />
+
+        {/* Sort */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs" style={{ color: 'var(--muted)' }}>Sort:</span>
+          {[['avg','Avg Delay'],['max','Max Delay'],['late','Days Late'],['name','Name']].map(([v, l]) => (
+            <button key={v} onClick={() => setSortBy(v)}
+              className="px-2 py-1 rounded text-xs font-medium transition"
+              style={{ background: sortBy===v ? 'var(--brand)' : 'var(--bg)', color: sortBy===v ? '#fff' : 'var(--muted)' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <button onClick={() => load(date, days)} className="btn-ghost p-1.5" title="Refresh">
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
+
+        {/* ── Telegram appreciation button ── */}
+        <button
+          onClick={sendAppreciation}
+          disabled={sending || !editions.length}
+          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition ml-auto"
+          style={{ background: '#10b981', color: '#fff', opacity: sending || !editions.length ? 0.6 : 1 }}
+          title="Send weekly appreciation to on-time branches via Telegram"
+        >
+          {sending
+            ? <><Loader2 size={14} className="animate-spin" /> Sending…</>
+            : <><Send size={14} /> Send Appreciation</>}
+        </button>
+      </div>
+
+      {/* ── Appreciation send result banner ──────────────────────────────── */}
+      {sendResult && (
+        <div className="mb-4 rounded-xl p-3 text-sm"
+          style={{
+            background: sendResult.error ? '#d7192015' : sendResult.sent?.length > 0 ? '#10b98115' : '#C9A22715',
+            border: `1px solid ${sendResult.error ? '#d7192030' : sendResult.sent?.length > 0 ? '#10b98130' : '#C9A22730'}`,
+          }}>
+          <div className="space-y-1">
+            {sendResult.noOnTime && (
+              <p style={{ color: '#C9A227' }}>ℹ️ No on-time editions found for the week ending <strong>{sendResult.endDate}</strong>. Nothing sent.</p>
+            )}
+            {sendResult.skipped && (
+              <p style={{ color: '#C9A227' }}>⚠️ Telegram bot token not set — add <code className="text-xs bg-black/10 px-1 rounded">TELEGRAM_BOT_TOKEN</code> in <code className="text-xs bg-black/10 px-1 rounded">.env</code> and restart.</p>
+            )}
+            {sendResult.error && (
+              <p style={{ color: '#d71920' }}>❌ Error: {sendResult.error}</p>
+            )}
+            {sendResult.sent?.length > 0 && (
+              <p style={{ color: '#10b981' }}>
+                ✅ Appreciation sent to <strong>{sendResult.sent.length}</strong> recipient{sendResult.sent.length !== 1 ? 's' : ''}:{' '}
+                {sendResult.sent.map(s => `${s.name} (${s.branch})`).join(', ')}
+              </p>
+            )}
+            {sendResult.failed?.length > 0 && (
+              <p style={{ color: '#d71920' }}>
+                ❌ Failed ({sendResult.failed.length}): {sendResult.failed.map(f => `${f.name} — ${f.error}`).join('; ')}
+              </p>
+            )}
+            {sendResult.noRecipients?.length > 0 && (
+              <p style={{ color: '#C9A227' }}>
+                ⚠️ No Telegram recipients configured for: {sendResult.noRecipients.join(', ')}
+              </p>
+            )}
+            {sendResult.startDate && (
+              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                Week: {sendResult.startDate} → {sendResult.endDate}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── States ───────────────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="flex items-center justify-center py-24 gap-2" style={{ color: 'var(--muted)' }}>
+          <Loader2 size={20} className="animate-spin" /> Loading weekly trend…
+        </div>
+      ) : error ? (
+        <div className="rounded-xl p-4 text-sm" style={{ background: '#d7192015', color: '#d71920' }}>
+          ⚠️ {error}
+        </div>
+      ) : !editions.length ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-2" style={{ color: 'var(--muted)' }}>
+          <BarChart2 size={32} />
+          <p className="text-sm">No edition data found for this period.</p>
+          <p className="text-xs">Try a different date range or region.</p>
+        </div>
+      ) : (
+        <>
+          {/* ── Summary strip ──────────────────────────────────────────── */}
+          {stats && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+              <div className="card p-4">
+                <div className="text-2xl font-bold" style={{ color: '#3b82f6' }}>{stats.edCount}</div>
+                <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Editions Tracked</div>
+                <div className="text-xs" style={{ color: 'var(--muted)' }}>{days}-day window</div>
+              </div>
+              <div className="card p-4">
+                <div className="text-2xl font-bold" style={{ color: '#d71920' }}>{stats.pct}%</div>
+                <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Release Delays</div>
+                <div className="text-xs" style={{ color: 'var(--muted)' }}>{stats.delayed} of {stats.total} edition-days</div>
+              </div>
+              <div className="card p-4">
+                <div className="text-2xl font-bold" style={{ color: '#C9A227' }}>{fmtDelay(stats.worst?.avg_delay || 0)}</div>
+                <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Worst Avg Delay</div>
+                <div className="text-xs truncate" style={{ color: 'var(--muted)' }}>{stats.worst?.edition_name}</div>
+              </div>
+              {/* Legend */}
+              <div className="card p-4 flex flex-col justify-center gap-1.5">
+                {[['#10b981','On Time (≤ 0 min)'],['#C9A227','Warning (1–30 min)'],['#d71920','Late (> 30 min)']].map(([clr, lbl]) => (
+                  <span key={clr} className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                    <span className="w-3 h-3 rounded flex-shrink-0" style={{ background: clr }} />{lbl}
+                  </span>
+                ))}
+                <span className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                  <span className="w-3 h-3 rounded flex-shrink-0" style={{ background: 'var(--border)' }} />No Data
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Heatmap table ───────────────────────────────────────────── */}
+          <SectionCard
+            className="mb-4"
+            title={
+              <span>
+                Edition Delay Heatmap
+                <span className="ml-2 text-sm font-normal" style={{ color: 'var(--muted)' }}>
+                  {editions.length} editions · {dates.length} days
+                  {search && ` · filtered`}
+                </span>
+                <span className="ml-3 text-xs font-normal" style={{ color: 'var(--muted)' }}>
+                  Click a row for detail chart ↓
+                </span>
+              </span>
+            }
+          >
+            <div className="overflow-x-auto">
+              <table className="text-xs border-collapse" style={{ width: '100%' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface)' }}>
+                    {/* Sticky edition name */}
+                    <th className="p-2 text-left font-semibold sticky left-0 z-10 border-b"
+                      style={{ background: 'var(--surface)', borderColor: 'var(--border)', minWidth: 170 }}>
+                      Edition
+                    </th>
+                    <th className="p-2 text-left font-normal border-b border-l"
+                      style={{ color: 'var(--muted)', borderColor: 'var(--border)', minWidth: 90 }}>
+                      Unit
+                    </th>
+                    {/* Date columns */}
+                    {dates.map(dt => {
+                      const { day, num } = dayLabel(dt);
+                      return (
+                        <th key={dt} className="p-2 text-center font-medium border-b border-l"
+                          style={{ color: 'var(--muted)', borderColor: 'var(--border)', minWidth: 68 }}>
+                          <div className="font-semibold">{day}</div>
+                          <div className="opacity-70">{num}</div>
+                        </th>
+                      );
+                    })}
+                    {/* Summary columns */}
+                    <th className="p-2 text-center font-semibold border-b border-l"
+                      style={{ color: '#C9A227', borderColor: 'var(--border)', minWidth: 68 }}>Avg</th>
+                    <th className="p-2 text-center font-semibold border-b border-l"
+                      style={{ color: '#d71920', borderColor: 'var(--border)', minWidth: 68 }}>Max</th>
+                    <th className="p-2 text-center font-semibold border-b border-l"
+                      style={{ color: 'var(--muted)', borderColor: 'var(--border)', minWidth: 72 }}>Days Late</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {editions.map(ed => {
+                    const isSel = selectedEd === ed.code;
+                    const avgC  = ed.avg_delay > 30 ? '#d71920' : ed.avg_delay > 0 ? '#C9A227' : '#10b981';
+                    const maxC  = ed.max_delay > 30 ? '#d71920' : ed.max_delay > 0 ? '#C9A227' : '#10b981';
+                    return (
+                      <tr key={ed.code}
+                        className="border-t transition-colors cursor-pointer"
+                        style={{
+                          borderColor: 'var(--border)',
+                          background: isSel ? 'color-mix(in srgb, var(--brand) 8%, transparent)' : 'transparent',
+                          outline:    isSel ? '2px solid var(--brand)' : 'none',
+                          outlineOffset: '-2px',
+                        }}
+                        onClick={() => setSelectedEd(isSel ? null : ed.code)}
+                      >
+                        {/* Edition name — sticky */}
+                        <td className="p-2 font-semibold sticky left-0 z-10 whitespace-nowrap"
+                          style={{ background: isSel ? 'color-mix(in srgb, var(--brand) 10%, var(--surface))' : 'var(--surface)' }}>
+                          <div>{ed.edition_name || ed.code}</div>
+                          {ed.district && <div className="text-xs font-normal" style={{ color: 'var(--muted)' }}>{ed.district}</div>}
+                        </td>
+                        {/* Unit */}
+                        <td className="p-2 border-l whitespace-nowrap" style={{ color: 'var(--muted)', borderColor: 'var(--border)' }}>
+                          {ed.unit || '—'}
+                        </td>
+                        {/* Heat cells per day */}
+                        {dates.map(dt => <HeatCell key={dt} d={ed.days[dt]} />)}
+                        {/* Avg delay */}
+                        <td className="p-2 text-center font-bold font-mono border-l" style={{ color: avgC, borderColor: 'var(--border)' }}>
+                          {fmtDelay(ed.avg_delay)}
+                        </td>
+                        {/* Max delay */}
+                        <td className="p-2 text-center font-bold font-mono border-l" style={{ color: maxC, borderColor: 'var(--border)' }}>
+                          {fmtDelay(ed.max_delay)}
+                        </td>
+                        {/* Days late */}
+                        <td className="p-2 text-center border-l" style={{ borderColor: 'var(--border)' }}>
+                          <span className="rounded px-1.5 py-0.5 font-semibold"
+                            style={{
+                              background: ed.delayed_days > 0 ? '#d7192015' : '#10b98115',
+                              color:      ed.delayed_days > 0 ? '#d71920'   : '#10b981',
+                            }}>
+                            {ed.delayed_days}/{ed.data_days}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+
+          {/* ── Detail bar chart for selected edition ───────────────────── */}
+          {selEd && chartData.length > 0 && (
+            <SectionCard title={
+              <span className="flex items-center gap-2">
+                <BarChart2 size={15} />
+                Delay Trend —{' '}
+                <strong>{selEd.edition_name}</strong>
+                {selEd.unit && (
+                  <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>
+                    {selEd.unit}{selEd.district ? ` · ${selEd.district}` : ''}
+                  </span>
+                )}
+                <button onClick={() => setSelectedEd(null)} className="ml-auto p-0.5">
+                  <X size={14} style={{ color: 'var(--muted)' }} />
+                </button>
+              </span>
+            }>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" stroke="var(--muted)" fontSize={11} tick={{ fontSize: 11 }} />
+                  <YAxis
+                    stroke="var(--muted)" fontSize={11}
+                    tickFormatter={v => {
+                      const abs = Math.abs(v), h = Math.floor(abs/60), m = abs%60;
+                      return `${v<0?'-':''}${h}:${String(m).padStart(2,'0')}`;
+                    }}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const d = payload[0].payload;
+                      if (d.delay === null) return null;
+                      const c = d.status==='late'?'#d71920':d.status==='warn'?'#C9A227':'#10b981';
+                      return (
+                        <div className="rounded-xl border p-3 text-xs shadow-lg"
+                          style={{ background: 'var(--surface)', borderColor: 'var(--border)', minWidth: 130 }}>
+                          <div className="font-bold mb-1">{d.date}</div>
+                          <div style={{ color: c }}>Delay: <strong>{d.hhmm}</strong></div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <ReferenceLine y={0} stroke="var(--border)" strokeWidth={2} />
+                  <Bar dataKey="delay" radius={[4, 4, 0, 0]} barSize={28}
+                    label={{
+                      position: 'top', fontSize: 10,
+                      formatter: v => v === null ? '' : fmtDelay(v),
+                    }}>
+                    {chartData.map((d, i) => (
+                      <Cell key={i}
+                        fill={
+                          d.delay === null  ? 'var(--border)' :
+                          d.status==='ontime' ? '#10b981' :
+                          d.status==='warn'   ? '#C9A227' :
+                                               '#d71920'
+                        }
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </SectionCard>
           )}
         </>
       )}
