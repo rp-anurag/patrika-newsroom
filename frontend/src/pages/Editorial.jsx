@@ -12,7 +12,7 @@ import {
   CartesianGrid, Cell,
 } from 'recharts';
 import {
-  Newspaper, CalendarDays, BarChart2, LayoutGrid,
+  Newspaper, CalendarDays, LayoutGrid,
   ExternalLink, RefreshCw, ChevronLeft, ChevronRight,
   Clock, Lightbulb, Users, FileText, Target, TrendingUp, AlertTriangle,
 } from 'lucide-react';
@@ -24,7 +24,6 @@ import { PageHeader, SectionCard, Badge } from '../components/UI.jsx';
 const TABS = [
   { id: 'feed',     icon: Newspaper,    label: 'News Feed'   },
   { id: 'calendar', icon: CalendarDays, label: 'Calendar'    },
-  { id: 'intel',    icon: BarChart2,    label: 'Story Intel' },
   { id: 'newsroom', icon: LayoutGrid,   label: 'Newsroom'    },
 ];
 
@@ -766,7 +765,6 @@ export default function Editorial() {
         <>
           {activeTab === 'feed'     && <NewsFeedTab     anniversaries={data.anniversaries} summary={data.summary} />}
           {activeTab === 'calendar' && <CalendarTab     prominentDays={data.prominentDays} planning={data.planning} />}
-          {activeTab === 'intel'    && <StoryIntelTab   storyMix={data.storyMix} targetVsActual={data.targetVsActual} coverageGaps={data.coverageGaps} summary={data.summary} />}
           {activeTab === 'newsroom' && <NewsroomTab     topNews={data.topNews} planning={data.planning} deskReview={data.deskReview} rndIdeas={data.rndIdeas} />}
         </>
       )}

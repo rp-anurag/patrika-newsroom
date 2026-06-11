@@ -203,10 +203,12 @@ module.exports = async function handler(req, res) {
   const { authError, user } = requireRole(req, ['Admin', 'State Head', 'Regional Editor', 'HR', 'Management', 'Legal']);
   if (authError) return res.status(authError.status).json({ error: authError.message });
 
-  // Role-locked state
-  let filterState = req.query.state || '';
-  if (user.role === 'State Head' && user.state)     filterState = user.state;
-  if (user.role === 'Regional Editor' && user.state) filterState = user.state;
+  // Role-locked state / branch
+  let filterState  = req.query.state || '';
+  let filterBranch = '';
+  if (user.role === 'State Head'      && user.state)  filterState  = user.state;
+  if (user.role === 'Regional Editor' && user.state)  filterState  = user.state;
+  if (user.role === 'Regional Editor' && user.branch) filterBranch = user.branch;
   if (filterState === 'All') filterState = '';
 
   const date      = req.query.date  || yday();
@@ -281,10 +283,11 @@ module.exports = async function handler(req, res) {
              FROM daily_achievment_count_ecms e
              JOIN \`user\` u ON e.Pan_no = u.pan_no
              WHERE DATE(e.entrydate) = DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-             ${filterState ? 'AND u.State = ?' : ''}
+             ${filterState  ? 'AND u.State = ?'  : ''}
+             ${filterBranch ? 'AND u.Branch = ?' : ''}
              GROUP BY u.pan_no, u.EMPNAME, u.State, u.Branch
              ORDER BY stories DESC LIMIT 15`,
-             filterState ? [filterState] : []).catch(() => []),
+             [filterState, filterBranch].filter(Boolean)).catch(() => []),
 
       // 7. R&D ideas (last 90 days)
       query(`SELECT ri.entry_date, ri.state, ri.branch, ri.idea_float,
