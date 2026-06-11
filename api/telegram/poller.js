@@ -320,6 +320,17 @@ async function pollLoop(token) {
   }
 }
 
+// ── Crash-safe polling wrapper ────────────────────────────────────────────────
+// pollLoop() should never reject (inner try-catch covers everything), but if it
+// somehow does, catch it here and restart after a short delay so the process
+// doesn't go down due to an unhandled rejection.
+function startPolling(token) {
+  pollLoop(token).catch(err => {
+    console.error('[bot] Poll loop crashed unexpectedly:', err.message, '— restarting in 10s');
+    setTimeout(() => startPolling(token), 10000);
+  });
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 let botInfo = null;
 
@@ -349,7 +360,7 @@ function start() {
       botInfo = info;
       process.env.TELEGRAM_BOT_USERNAME = info.username;
       console.log(`[bot] ✅ Connected: @${info.username} — "${info.first_name}"`);
-      pollLoop(token);
+      startPolling(token);
     })
     .catch(err => console.error('[bot] Startup error:', err.message));
 }
