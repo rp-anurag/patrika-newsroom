@@ -1081,38 +1081,19 @@ function scoreColor(v) {
 }
 
 function GradingTab({ emps, canEditHr, canViewHr }) {
-  const { availableStates, getBranchesForState } = useApp();
-
   const [month,       setMonth]       = useState(currentMonth());
   const [gradings,    setGradings]    = useState([]);
   const [localGrades, setLocalGrades] = useState({});
   const [loading,     setLoading]     = useState(false);
   const [savingId,    setSavingId]    = useState(null);
-  const [localState,  setLocalState]  = useState('All');
-  const [localBranch, setLocalBranch] = useState('All');
-
-  // Sync localState when role/locations change
-  useEffect(() => {
-    if (!availableStates.includes(localState)) {
-      const def = availableStates.includes('All') ? 'All' : (availableStates[0] || 'All');
-      setLocalState(def);
-      setLocalBranch('All');
-    }
-  }, [availableStates.join(',')]); // eslint-disable-line
 
   // Active employees only
   const working = useMemo(() =>
     emps.filter(e => e.Status === 'Working' || e.is_emp_working == 1 || e.Status === 'Active'),
   [emps]);
 
-  const handleStateChange = (s) => { setLocalState(s); setLocalBranch('All'); };
-
-  // Filtered display list
-  const displayEmps = useMemo(() => working.filter(e => {
-    if (localState  !== 'All' && e.State  !== localState)  return false;
-    if (localBranch !== 'All' && e.Branch !== localBranch) return false;
-    return true;
-  }), [working, localState, localBranch]);
+  // State/branch already filtered by global top-left selector via `emps` prop
+  const displayEmps = working;
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1194,17 +1175,6 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
             type="month" className="input py-1.5 text-sm" value={month}
             onChange={e => { setMonth(e.target.value); }}
           />
-          <select value={localState} onChange={e => handleStateChange(e.target.value)} className="input py-1.5 text-sm">
-            {availableStates.map(s => <option key={s} value={s}>{s === 'All' ? 'All States' : s}</option>)}
-          </select>
-          <select value={localBranch} onChange={e => setLocalBranch(e.target.value)} disabled={localState === 'All'} className="input py-1.5 text-sm disabled:opacity-40">
-            {getBranchesForState(localState).map(b => <option key={b} value={b}>{b === 'All' ? 'All Branches' : b}</option>)}
-          </select>
-          {(localState !== 'All' || localBranch !== 'All') && (
-            <button onClick={() => { setLocalState('All'); setLocalBranch('All'); }} className="btn-ghost py-1.5 text-sm">
-              <X size={13} className="inline mr-1" />Clear
-            </button>
-          )}
           <button onClick={load} className="btn-ghost p-1.5" title="Refresh"><RefreshCw size={14} /></button>
           <button onClick={downloadGrading} className="btn-ghost flex items-center gap-1.5 text-sm ml-auto">
             <Download size={14} /> Excel
