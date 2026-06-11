@@ -240,23 +240,26 @@ module.exports = async function handler(req, res) {
 
       // 2. Yesterday's story type mix
       query(`SELECT
-               SUM(Exclusive)       AS exclusive,
-               SUM(Human_angle)     AS human_angle,
-               SUM(Datastory)       AS datastory,
-               SUM(Expose_khulasa)  AS expose,
-               SUM(Impact_Story)    AS impact,
-               SUM(Interviews)      AS interviews,
-               SUM(News_Campaign)   AS campaign,
-               SUM(Routine_News)    AS routine,
-               SUM(Spotlight)       AS spotlight,
-               SUM(Sting_Operation) AS sting,
-               SUM(No_Story)        AS total,
-               SUM(No_Photo)        AS photos,
-               SUM(No_Words)        AS words,
-               COUNT(DISTINCT Pan_no) AS reporters
-             FROM daily_achievment_count_ecms
-             WHERE DATE(entrydate) = ?`,
-             [yesterday]).catch(() => [{}]),
+               SUM(e.Exclusive)       AS exclusive,
+               SUM(e.Human_angle)     AS human_angle,
+               SUM(e.Datastory)       AS datastory,
+               SUM(e.Expose_khulasa)  AS expose,
+               SUM(e.Impact_Story)    AS impact,
+               SUM(e.Interviews)      AS interviews,
+               SUM(e.News_Campaign)   AS campaign,
+               SUM(e.Routine_News)    AS routine,
+               SUM(e.Spotlight)       AS spotlight,
+               SUM(e.Sting_Operation) AS sting,
+               SUM(e.No_Story)        AS total,
+               SUM(e.No_Photo)        AS photos,
+               SUM(e.No_Words)        AS words,
+               COUNT(DISTINCT e.Pan_no) AS reporters
+             FROM daily_achievment_count_ecms e
+             ${filterState || filterBranch ? 'JOIN `user` u ON e.Pan_no = u.pan_no' : ''}
+             WHERE DATE(e.entrydate) = ?
+             ${filterState  ? 'AND u.State = ?'  : ''}
+             ${filterBranch ? 'AND u.Branch = ?' : ''}`,
+             [yesterday, filterState, filterBranch].filter(Boolean)).catch(() => [{}]),
 
       // 3. Reporter targets
       query("SELECT * FROM daily_target_ecms WHERE Story_Type = 'Reporter' LIMIT 1").catch(() => [{}]),
