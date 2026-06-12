@@ -113,6 +113,7 @@ app.get('/api/archive',                h('./api/archive'));
 app.use('/uploads/archive', require('express').static(require('path').join(__dirname, 'uploads', 'archive')));
 
 // ── AI ────────────────────────────────────────────────────────────────────────
+app.get('/api/ai/insights',           h('./api/ai/insights'));
 app.all('/api/ai/assistant',          h('./api/ai/assistant'));
 
 // ── Serve React SPA ───────────────────────────────────────────────────────────

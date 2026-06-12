@@ -92,6 +92,15 @@ export const api = {
     const p = new URLSearchParams({ type, ...params });
     return withFallback(`/reports?${p}`, { type, columns: [], rows: [], total: 0 });
   },
+  aiInsights: (state, branch, refresh = false) => {
+    const p = new URLSearchParams();
+    if (state  && state  !== 'All') p.set('state',  state);
+    if (branch && branch !== 'All') p.set('branch', branch);
+    if (refresh) p.set('refresh', '1');
+    const qs = p.toString();
+    return withFallback(`/ai/insights${qs ? '?' + qs : ''}`, null);
+  },
+
   aiAssistant: async (q) => {
     try { return await request('/ai/assistant', { method: 'POST', body: JSON.stringify({ q }) }); }
     catch (err) {
