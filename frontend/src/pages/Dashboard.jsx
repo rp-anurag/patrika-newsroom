@@ -183,7 +183,7 @@ export default function Dashboard() {
 
       {/* ── Row 2: Edition Delays ────────────────────────────────────────────── */}
       <div className="mt-4">
-        <SectionCard title={`Edition Delays — Yesterday${editionDelays.length ? ` (${editionDelays.length} editions)` : ''}`}>
+        <SectionCard title={`Edition Delays — Today${editionDelays.length ? ` (${editionDelays.length} editions)` : ''}`}>
           {editionDelays.length ? (
             <>
               <ResponsiveContainer width="100%" height={Math.max(180, editionDelays.length * 28)}>

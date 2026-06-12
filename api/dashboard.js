@@ -66,7 +66,8 @@ module.exports = async function handler(req, res) {
     const filterBranch = branch && branch !== 'All' ? branch : '';
 
     // ── Date helpers ──────────────────────────────────────────────────────────
-    const toIST   = ms => new Date(ms + 5.5 * 3600000).toISOString().slice(0, 10);
+    const toIST    = ms => new Date(ms + 5.5 * 3600000).toISOString().slice(0, 10);
+    const todayStr = toIST(Date.now());
     const ydayStr  = toIST(Date.now() - 864e5);
     const trend7Str= toIST(Date.now() - 7 * 864e5);
 
@@ -159,30 +160,30 @@ module.exports = async function handler(req, res) {
       query('SELECT UPPER(file_name) AS code, unit, state, edition_name, schedule_time FROM page_schedule_time')
         .catch(() => []),
 
-      // 11. Yesterday's GMG releases — Rajasthan
+      // 11. Today's GMG releases — Rajasthan
       query(`SELECT UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(input_file,'-',2),'-',-1)) AS code,
                     MAX(date_time_pdf) AS release_time,
                     GROUP_CONCAT(DISTINCT date_time_pdf ORDER BY date_time_pdf DESC SEPARATOR '|') AS all_release_times
              FROM gmg_raj
              WHERE input_file REGEXP '^[0-9]{8}-' AND date_time_pdf IS NOT NULL
                AND STR_TO_DATE(LEFT(input_file,8),'%d%m%Y') = ?
-             GROUP BY code`, [ydayStr]).catch(() => []),
+             GROUP BY code`, [todayStr]).catch(() => []),
 
-      // 12. Yesterday's GMG releases — MP/CG
+      // 12. Today's GMG releases — MP/CG
       query(`SELECT UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(input_file,'-',2),'-',-1)) AS code,
                     MAX(date_time_pdf) AS release_time,
                     GROUP_CONCAT(DISTINCT date_time_pdf ORDER BY date_time_pdf DESC SEPARATOR '|') AS all_release_times
              FROM gmg_mpcg
              WHERE input_file REGEXP '^[0-9]{8}-' AND date_time_pdf IS NOT NULL
                AND STR_TO_DATE(LEFT(input_file,8),'%d%m%Y') = ?
-             GROUP BY code`, [ydayStr]).catch(() => []),
+             GROUP BY code`, [todayStr]).catch(() => []),
     ]);
 
     // ── Compute edition delays ────────────────────────────────────────────────
     const schedMap = {};
     schedRows.forEach(s => { schedMap[s.code] = s; });
 
-    const pubDate = new Date(ydayStr);
+    const pubDate = new Date(todayStr);
     const allReleases = [...rajRows, ...mpcgRows];
 
     const editionDelays = allReleases
