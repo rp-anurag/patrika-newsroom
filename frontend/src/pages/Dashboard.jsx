@@ -181,55 +181,6 @@ export default function Dashboard() {
         </SectionCard>
       </div>
 
-      {/* ── Row 2: Edition Delays ────────────────────────────────────────────── */}
-      <div className="mt-4">
-        <SectionCard title={`Edition Delays — Today${editionDelays.length ? ` (${editionDelays.length} editions)` : ''}`}>
-          {editionDelays.length ? (
-            <>
-              <ResponsiveContainer width="100%" height={Math.max(180, editionDelays.length * 28)}>
-                <BarChart
-                  data={editionDelays}
-                  layout="vertical"
-                  margin={{ left: 90, right: 50, top: 4, bottom: 4 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis
-                    type="number" stroke="var(--muted)" fontSize={11}
-                    tickFormatter={v => { const a = Math.abs(v); return `${Math.floor(a/60)}:${String(a%60).padStart(2,'0')}`; }}
-                    label={{ value: 'hh:mm', position: 'insideRight', offset: -2, fontSize: 10, fill: 'var(--muted)' }}
-                  />
-                  <YAxis type="category" dataKey="edition" stroke="var(--muted)" fontSize={11} width={86} />
-                  <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}
-                    formatter={(v, _n, props) => [props.payload?.delay_hhmm || `${v > 0 ? '+' : ''}${v}`, 'Delay']}
-                  />
-                  <Bar dataKey="delay" radius={[0, 4, 4, 0]} barSize={14}>
-                    {editionDelays.map((e, i) => (
-                      <Cell
-                        key={i}
-                        fill={e.status === 'ontime' ? '#16a34a' : e.status === 'warn' ? '#C9A227' : '#d71920'}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="mt-2 flex gap-4 text-xs justify-end" style={{ color: 'var(--muted)' }}>
-                <span className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#16a34a' }} /> On Time (≤0 min)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#C9A227' }} /> Warn (00:01–00:30)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#d71920' }} /> Late (&gt;00:30)
-                </span>
-              </div>
-            </>
-          ) : (
-            <EmptyState msg="No edition data available for yesterday" />
-          )}
-        </SectionCard>
-      </div>
     </div>
   );
 }
