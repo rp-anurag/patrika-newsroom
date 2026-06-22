@@ -6,6 +6,7 @@ const { query }       = require('./_lib/mysql');
 const { requireRole } = require('./_lib/auth');
 const { setCors, handleOptions } = require('./_lib/cors');
 const { sendMessage } = require('./_lib/telegram');
+const { ensureColumn } = require('./_lib/schema');
 
 let tableReady = false;
 
@@ -28,6 +29,7 @@ async function ensureTable() {
       created_at         DATETIME     DEFAULT CURRENT_TIMESTAMP,
       updated_at         DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       completed_at       DATETIME,
+      assigned_by_telegram VARCHAR(100) DEFAULT NULL,
       INDEX idx_state  (assigned_to_state),
       INDEX idx_branch (assigned_to_branch),
       INDEX idx_status (status),
@@ -44,7 +46,11 @@ module.exports = async function handler(req, res) {
   if (authError) return res.status(authError.status).json({ error: authError.message });
 
   if (!tableReady) {
-    try { await ensureTable(); tableReady = true; }
+    try {
+      await ensureTable();
+      await ensureColumn('tasks', 'assigned_by_telegram', "VARCHAR(100) DEFAULT NULL");
+      tableReady = true;
+    }
     catch (e) { return res.status(500).json({ error: 'DB setup: ' + e.message }); }
   }
 
@@ -107,16 +113,23 @@ module.exports = async function handler(req, res) {
     ).catch(() => []);
     const creatorName = creator?.name || user.sub || 'Unknown';
 
+    // Look up assigner's telegram from employee master by name match
+    const [assignerEmp] = await query(
+      `SELECT telegram_chat_id FROM \`user\` WHERE TRIM(EMPNAME) = TRIM(?) AND telegram_chat_id IS NOT NULL AND telegram_chat_id != '' LIMIT 1`,
+      [creatorName]
+    ).catch(() => []);
+    const assignerTelegram = assignerEmp?.telegram_chat_id || null;
+
     const result = await query(
       `INSERT INTO tasks
          (title, description, category, priority,
           assigned_to_pan, assigned_to_name, assigned_to_state, assigned_to_branch,
-          assigned_by, assigned_by_name, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          assigned_by, assigned_by_name, due_date, assigned_by_telegram)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title.trim(), description || '', category || 'Other', priority || 'medium',
         assignee.pan_no, assignee.EMPNAME || '', assignee.State || '', assignee.Branch || '',
-        user.sub, creatorName, due_date || null,
+        user.sub, creatorName, due_date || null, assignerTelegram,
       ]
     );
 

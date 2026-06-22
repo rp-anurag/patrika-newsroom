@@ -46,15 +46,41 @@ module.exports = async function handler(req, res) {
     params.push(id);
     await query(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, params);
 
-    // Telegram: notify assignee when task is marked completed
-    if (status === 'completed') {
-      const [emp] = await query(
-        `SELECT telegram_chat_id FROM \`user\` WHERE pan_no = ?`, [task.assigned_to_pan]
+    if (status) {
+      const statusEmoji = { completed: '✅', in_progress: '🔄', pending: '⏸', cancelled: '❌' };
+      const statusLabel = { completed: 'Completed', in_progress: 'In Progress', pending: 'Pending', cancelled: 'Cancelled' };
+      const emoji = statusEmoji[status] || '📋';
+      const label = statusLabel[status] || status;
+
+      // Fetch updater's display name
+      const [updaterRow] = await query(
+        'SELECT name FROM users WHERE username = ? LIMIT 1', [user.sub]
       ).catch(() => []);
-      if (emp?.telegram_chat_id) {
-        sendMessage(emp.telegram_chat_id,
-          `✅ <b>Task Completed</b>\n\n<b>${task.title}</b>\nMarked complete by ${user.sub}`
+      const updaterName = updaterRow?.name || task.assigned_to_name || user.sub;
+
+      // Assignee updated → notify assigner
+      if (task.assigned_by_telegram && user.sub !== task.assigned_by) {
+        sendMessage(task.assigned_by_telegram,
+          `${emoji} <b>Task Update</b>\n\n` +
+          `<b>${task.title}</b>\n` +
+          `Status: <b>${label}</b>\n` +
+          `👤 Updated by: ${updaterName}`
         ).catch(() => {});
+      }
+
+      // Assigner updated → notify assignee
+      if (user.sub === task.assigned_by) {
+        const [assigneeEmp] = await query(
+          `SELECT telegram_chat_id FROM \`user\` WHERE pan_no = ?`, [task.assigned_to_pan]
+        ).catch(() => []);
+        if (assigneeEmp?.telegram_chat_id) {
+          sendMessage(assigneeEmp.telegram_chat_id,
+            `${emoji} <b>Task Update</b>\n\n` +
+            `<b>${task.title}</b>\n` +
+            `Status: <b>${label}</b>\n` +
+            `👤 Updated by: ${task.assigned_by_name || task.assigned_by}`
+          ).catch(() => {});
+        }
       }
     }
 
