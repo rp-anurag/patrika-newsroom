@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Sparkles, Send, Brain } from 'lucide-react';
+import { Sparkles, Send, Brain, Copy, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api }   from '../api/client.js';
 import { PageHeader, SectionCard } from '../components/UI.jsx';
@@ -12,6 +12,27 @@ const INITIAL_CHIPS = [
   'Field visits count this week',
   'Most active branch this month',
 ];
+
+function CopyBtn({ text }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button
+      onClick={copy}
+      title="Copy"
+      className="absolute -bottom-5 right-0 flex items-center gap-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+      style={{ color: 'var(--muted)' }}
+    >
+      {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  );
+}
 
 export default function AiInsights() {
   const { t, state, branch } = useApp();
@@ -63,13 +84,18 @@ export default function AiInsights() {
           <div className="flex-1 space-y-3 overflow-y-auto pr-1">
             {msgs.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className="max-w-[80%] rounded-2xl px-3.5 py-2 text-sm"
-                  style={m.role === 'user'
-                    ? { background: 'var(--brand)', color: '#fff' }
-                    : { background: 'var(--bg)',    color: 'var(--text)' }}
-                >
-                  {m.text}
+                <div className="max-w-[80%] group relative">
+                  <div
+                    className="rounded-2xl px-3.5 py-2 text-sm"
+                    style={m.role === 'user'
+                      ? { background: 'var(--brand)', color: '#fff' }
+                      : { background: 'var(--bg)',    color: 'var(--text)' }}
+                  >
+                    {m.text}
+                  </div>
+                  {m.role === 'ai' && i > 0 && (
+                    <CopyBtn text={m.text} />
+                  )}
                 </div>
               </div>
             ))}

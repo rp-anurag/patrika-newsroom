@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
   // ── PATCH — update user ───────────────────────────────────────────────────
   if (req.method === 'PATCH') {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    const { name, role, state, branch, password, is_active } = body;
+    const { name, role, state, branch, password, is_active, email } = body;
 
     const fields = [];
     const vals   = [];
@@ -36,6 +36,7 @@ module.exports = async (req, res) => {
     if (role)     { fields.push('role = ?');          vals.push(role); }
     if ('state'  in body) { fields.push('state = ?');  vals.push(state  || null); }
     if ('branch' in body) { fields.push('branch = ?'); vals.push(branch || null); }
+    if ('email_id' in body) { fields.push('email_id = ?'); vals.push(body.email_id || null); }
     if (password) {
       const hash = await bcrypt.hash(password, 10);
       fields.push('password_hash = ?');

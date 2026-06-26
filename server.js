@@ -102,6 +102,8 @@ app.use('/uploads/legal-notices', require('express').static(require('path').join
 app.all('/api/alerts/send-telegram',  h('./api/alerts/send-telegram'));
 app.all('/api/alerts/telegram-config',h('./api/alerts/telegram-config'));
 app.all('/api/alerts/telegram-test',  h('./api/alerts/telegram-test'));
+app.all('/api/alerts/send-email',     h('./api/alerts/send-email'));
+app.all('/api/alerts/email-config',   h('./api/alerts/email-config'));
 app.all('/api/alerts',                h('./api/alerts'));
 
 // ── Telegram bot ──────────────────────────────────────────────────────────────

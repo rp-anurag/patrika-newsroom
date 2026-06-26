@@ -21,6 +21,11 @@ async function ensureIsActive() {
   return ensureColumn('users', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1');
 }
 
+/** Guarantee email column exists. */
+async function ensureEmail() {
+  return ensureColumn('users', 'email_id', 'VARCHAR(255) DEFAULT NULL');
+}
+
 module.exports = async (req, res) => {
   setCors(res);
   if (handleOptions(req, res)) return;
@@ -31,10 +36,11 @@ module.exports = async (req, res) => {
   // ── GET — list users ──────────────────────────────────────────────────────
   if (req.method === 'GET') {
     try {
-      const hasCol = await ensureIsActive();
+      const hasCol   = await ensureIsActive();
+      await ensureEmail();
       const sql = hasCol
-        ? 'SELECT id, username, name, role, state, branch, COALESCE(is_active, 1) AS is_active, created_at FROM users ORDER BY name ASC'
-        : 'SELECT id, username, name, role, state, branch, 1 AS is_active, created_at FROM users ORDER BY name ASC';
+        ? 'SELECT id, username, name, role, state, branch, email_id, COALESCE(is_active, 1) AS is_active, created_at FROM users ORDER BY name ASC'
+        : 'SELECT id, username, name, role, state, branch, email_id, 1 AS is_active, created_at FROM users ORDER BY name ASC';
       const rows = await query(sql);
       return res.json(rows);
     } catch (err) {

@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int    FILE_CHOOSER_CODE = 102;
     private static final String PREFS            = "FieldPortalPrefs";
     private static final String KEY_SERVER       = "server_url";
-    private static final String DEFAULT_URL      = "http://10.30.9.182:3000/reporter";
+    private static final String DEFAULT_URL      = "http://10.30.9.200:3000/reporter";
 
     // ── Android GPS bridge ────────────────────────────────────────────────────
     class AndroidGPS {

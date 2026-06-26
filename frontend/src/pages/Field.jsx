@@ -256,6 +256,7 @@ function StoryTab({ user }) {
   const [storLoad, setStorLoad] = useState(false);
   const [expanded,     setExpanded]     = useState(null);
   const [editingStory, setEditingStory] = useState(null); // story being edited
+  const [editingImg,   setEditingImg]   = useState(null); // { idx, file, preview }
   const fileRef = useRef();
 
   const words = countWords(form.content);
@@ -511,6 +512,14 @@ function StoryTab({ user }) {
                           </div>
                         )
                       }
+                      {/* Edit button — only for images */}
+                      {p.type === 'image' && p.url && (
+                        <button
+                          onClick={() => setEditingImg({ idx: i, file: files[i], preview: p })}
+                          className="absolute top-1 left-1 w-6 h-6 bg-purple-600 text-white rounded-full text-xs flex items-center justify-center shadow-md"
+                          title="फोटो संपादित करें"
+                        >✏️</button>
+                      )}
                       <button
                         onClick={() => removeFile(i)}
                         className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -528,6 +537,20 @@ function StoryTab({ user }) {
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Image editor modal */}
+            {editingImg && (
+              <ImageEditorModal
+                file={editingImg.file}
+                preview={editingImg.preview}
+                onSave={(editedFile, editedUrl) => {
+                  setFiles(f => f.map((fi, i) => i === editingImg.idx ? editedFile : fi));
+                  setPreviews(p => p.map((pr, i) => i === editingImg.idx ? { ...pr, url: editedUrl } : pr));
+                  setEditingImg(null);
+                }}
+                onClose={() => setEditingImg(null)}
+              />
             )}
           </div>
 
@@ -1043,6 +1066,362 @@ function VisitTab({ user }) {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Image Editor Modal ────────────────────────────────────────────────────────
+function ImageEditorModal({ file, preview, onSave, onClose }) {
+  const [tool,       setTool]       = useState('adjust');
+  const [brightness, setBrightness] = useState(0);
+  const [contrast,   setContrast]   = useState(0);
+  const [saturation, setSaturation] = useState(0);
+  const [rotation,   setRotation]   = useState(0);
+  const [hasCrop,    setHasCrop]    = useState(false);
+  const [saving,     setSaving]     = useState(false);
+
+  const canvasRef   = useRef();
+  const containerRef= useRef();
+  const imgEl       = useRef(null);
+  // All hot state in refs — avoids stale closure issues in event handlers
+  const adjRef      = useRef({ brightness: 0, contrast: 0, saturation: 0, rotation: 0 });
+  const toolRef     = useRef('adjust');
+  const cropRef     = useRef(null);   // {x,y,w,h} 0-1 relative to imgRect
+  const imgRectRef  = useRef(null);   // {x,y,w,h} canvas-pixel rect where image is drawn
+  const dragStart   = useRef(null);   // canvas px
+  const dragCur     = useRef(null);   // canvas px
+  const dragging    = useRef(false);
+
+  // Sync state → refs → repaint
+  useEffect(() => { adjRef.current = { brightness, contrast, saturation, rotation }; repaint(); },
+    [brightness, contrast, saturation, rotation]);
+  useEffect(() => { toolRef.current = tool; repaint(); }, [tool]);
+
+  // Load image + size canvas once
+  useEffect(() => {
+    const img = new window.Image();
+    img.onload = () => { imgEl.current = img; syncCanvasSize(); repaint(); };
+    img.src = preview.url;
+  }, []);
+
+  // Watch container resize
+  useEffect(() => {
+    const ro = new ResizeObserver(() => { syncCanvasSize(); repaint(); });
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Make canvas pixel dims match its CSS display size
+  function syncCanvasSize() {
+    const cv = canvasRef.current, ct = containerRef.current;
+    if (!cv || !ct) return;
+    const w = ct.clientWidth  || ct.offsetWidth;
+    const h = ct.clientHeight || ct.offsetHeight;
+    if (w > 0 && (cv.width !== w))  cv.width  = w;
+    if (h > 0 && (cv.height !== h)) cv.height = h;
+  }
+
+  // Where the image lands (letterboxed) in canvas pixel space
+  function getImgRect(cw, ch) {
+    const img = imgEl.current;
+    if (!img) return { x: 0, y: 0, w: cw, h: ch };
+    const { rotation: rot } = adjRef.current;
+    const swap = rot === 90 || rot === 270;
+    const iw   = swap ? img.naturalHeight : img.naturalWidth;
+    const ih   = swap ? img.naturalWidth  : img.naturalHeight;
+    const sc   = Math.min(cw / iw, ch / ih);
+    const dw   = iw * sc, dh = ih * sc;
+    return { x: (cw - dw) / 2, y: (ch - dh) / 2, w: dw, h: dh };
+  }
+
+  // Draw the image into ctx at the letterbox position
+  function paintImg(ctx, ir) {
+    const img = imgEl.current;
+    if (!img) return;
+    const { brightness: b0, contrast: c0, saturation: s0, rotation: rot } = adjRef.current;
+    ctx.filter = `brightness(${(100+b0)/100}) contrast(${(100+c0)/100}) saturate(${(100+s0)/100})`;
+    ctx.save();
+    ctx.translate(ir.x + ir.w / 2, ir.y + ir.h / 2);
+    ctx.rotate(rot * Math.PI / 180);
+    ctx.drawImage(img, -img.naturalWidth / 2 * (ir.w / (rot===90||rot===270 ? img.naturalHeight : img.naturalWidth)),
+                       -img.naturalHeight / 2 * (ir.h / (rot===90||rot===270 ? img.naturalWidth : img.naturalHeight)),
+                        img.naturalWidth      * (ir.w / (rot===90||rot===270 ? img.naturalHeight : img.naturalWidth)),
+                        img.naturalHeight     * (ir.h / (rot===90||rot===270 ? img.naturalWidth : img.naturalHeight)));
+    ctx.restore();
+    ctx.filter = 'none';
+  }
+
+  function repaint() {
+    const cv = canvasRef.current;
+    if (!cv || !imgEl.current) return;
+    const cw = cv.width, ch = cv.height;
+    if (!cw || !ch) return;
+
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cw, ch);
+
+    const ir = getImgRect(cw, ch);
+    imgRectRef.current = ir;
+    paintImg(ctx, ir);
+
+    if (toolRef.current !== 'crop') return;
+
+    // Live drag rect (canvas px) → normalized to imgRect
+    let cr = cropRef.current;
+    if (dragging.current && dragStart.current && dragCur.current) {
+      const s = dragStart.current, e = dragCur.current;
+      const rx = Math.min(s.x, e.x), ry = Math.min(s.y, e.y);
+      const rw = Math.abs(e.x - s.x), rh = Math.abs(e.y - s.y);
+      if (rw > 5 && rh > 5) {
+        cr = {
+          x: Math.max(0, (rx - ir.x) / ir.w),
+          y: Math.max(0, (ry - ir.y) / ir.h),
+          w: Math.min(1, rw / ir.w),
+          h: Math.min(1, rh / ir.h),
+        };
+      }
+    }
+
+    // Dim whole canvas
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, cw, ch);
+
+    if (!cr) {
+      // Hint: redraw image bright inside its own bounds
+      ctx.save(); ctx.beginPath(); ctx.rect(ir.x, ir.y, ir.w, ir.h); ctx.clip();
+      paintImg(ctx, ir); ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = `bold ${Math.max(13, Math.round(ch * 0.035))}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('फोटो पर ड्रैग करें', cw / 2, ch / 2);
+      return;
+    }
+
+    // Convert crop norm → canvas px (relative to image rect)
+    const px = ir.x + cr.x * ir.w;
+    const py = ir.y + cr.y * ir.h;
+    const pw = cr.w * ir.w;
+    const ph = cr.h * ir.h;
+
+    // Bright image in selected area
+    ctx.save(); ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.clip();
+    paintImg(ctx, ir); ctx.restore();
+
+    // Green selection border
+    ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2;
+    ctx.strokeRect(px, py, pw, ph);
+
+    // White corner handles
+    const hL = Math.min(18, pw / 4, ph / 4);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    [[px,py,1,1],[px+pw,py,-1,1],[px,py+ph,1,-1],[px+pw,py+ph,-1,-1]].forEach(([x,y,sx,sy]) => {
+      ctx.beginPath(); ctx.moveTo(x+sx*hL,y); ctx.lineTo(x,y); ctx.lineTo(x,y+sy*hL); ctx.stroke();
+    });
+
+    // Rule-of-thirds grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath(); ctx.moveTo(px+pw*i/3,py); ctx.lineTo(px+pw*i/3,py+ph); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px,py+ph*i/3); ctx.lineTo(px+pw,py+ph*i/3); ctx.stroke();
+    }
+  }
+
+  // Returns canvas-px coordinates (NOT normalised)
+  function ptPx(e) {
+    const cv = canvasRef.current;
+    const r  = cv.getBoundingClientRect();
+    const src = e.changedTouches?.[0] ?? e.touches?.[0] ?? e;
+    // getBoundingClientRect gives CSS size; canvas.width gives pixel dims — map correctly
+    const scaleX = cv.width  / r.width;
+    const scaleY = cv.height / r.height;
+    return {
+      x: (src.clientX - r.left) * scaleX,
+      y: (src.clientY - r.top)  * scaleY,
+    };
+  }
+
+  function onPointerDown(e) {
+    if (toolRef.current !== 'crop') return;
+    e.preventDefault();
+    cropRef.current = null; setHasCrop(false);
+    dragStart.current = ptPx(e);
+    dragCur.current   = dragStart.current;
+    dragging.current  = true;
+  }
+  function onPointerMove(e) {
+    if (!dragging.current) return;
+    e.preventDefault();
+    dragCur.current = ptPx(e);
+    repaint();
+  }
+  function onPointerUp(e) {
+    if (!dragging.current) return;
+    dragging.current = false;
+    const s = dragStart.current, en = ptPx(e);
+    const ir = imgRectRef.current;
+    if (ir) {
+      const rx = Math.min(s.x, en.x), ry = Math.min(s.y, en.y);
+      const rw = Math.abs(en.x - s.x), rh = Math.abs(en.y - s.y);
+      if (rw / ir.w > 0.04 && rh / ir.h > 0.04) {
+        cropRef.current = {
+          x: Math.max(0, (rx - ir.x) / ir.w),
+          y: Math.max(0, (ry - ir.y) / ir.h),
+          w: Math.min(1, rw / ir.w),
+          h: Math.min(1, rh / ir.h),
+        };
+        setHasCrop(true);
+      }
+    }
+    repaint();
+  }
+
+  function clearCrop() {
+    cropRef.current = null; setHasCrop(false);
+    dragStart.current = null; dragCur.current = null; dragging.current = false;
+    repaint();
+  }
+
+  function reset() {
+    setBrightness(0); setContrast(0); setSaturation(0); setRotation(0);
+    clearCrop();
+  }
+
+  // Export at natural resolution — no overlay, optional crop
+  function handleSave() {
+    const img = imgEl.current;
+    // If image not loaded yet, just close the modal with original
+    if (!img) { onSave(file, preview.url); return; }
+    setSaving(true);
+
+    function finish(blob) {
+      try {
+        const name = (file?.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+        const outFile = blob ? new File([blob], name, { type: 'image/jpeg' }) : file;
+        const outUrl  = blob ? URL.createObjectURL(blob) : preview.url;
+        onSave(outFile, outUrl);
+      } catch {
+        onSave(file, preview.url); // absolute fallback — always close the modal
+      }
+    }
+
+    try {
+      const { brightness: b0, contrast: c0, saturation: s0, rotation: rot } = adjRef.current;
+      const swap = rot === 90 || rot === 270;
+      const outW = swap ? img.naturalHeight : img.naturalWidth;
+      const outH = swap ? img.naturalWidth  : img.naturalHeight;
+
+      const tmp = document.createElement('canvas');
+      tmp.width = Math.max(1, outW); tmp.height = Math.max(1, outH);
+      const tctx = tmp.getContext('2d');
+      tctx.filter = `brightness(${(100+b0)/100}) contrast(${(100+c0)/100}) saturate(${(100+s0)/100})`;
+      tctx.save();
+      tctx.translate(tmp.width / 2, tmp.height / 2);
+      tctx.rotate(rot * Math.PI / 180);
+      tctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+      tctx.restore();
+      tctx.filter = 'none';
+
+      const cr = cropRef.current;
+      let out = tmp;
+      if (cr) {
+        const cx = Math.round(cr.x * outW), cy = Math.round(cr.y * outH);
+        const dw = Math.max(1, Math.round(cr.w * outW));
+        const dh = Math.max(1, Math.round(cr.h * outH));
+        out = document.createElement('canvas');
+        out.width = dw; out.height = dh;
+        out.getContext('2d').drawImage(tmp, cx, cy, dw, dh, 0, 0, dw, dh);
+      }
+
+      out.toBlob(blob => finish(blob), 'image/jpeg', 0.93);
+    } catch {
+      // Canvas failed — close with original so user isn't stuck
+      finish(null);
+    }
+  }
+
+  const SLIDERS = [
+    { label: '☀️ ब्राइटनेस', v: brightness, set: setBrightness, min: -100, max: 100 },
+    { label: '◑ कॉन्ट्रास्ट',  v: contrast,   set: setContrast,   min: -100, max: 100 },
+    { label: '🌈 सेचुरेशन',    v: saturation, set: setSaturation, min: -100, max: 100 },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black" style={{ touchAction: 'none' }}>
+
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-900 shrink-0">
+        <button onClick={onClose} className="text-gray-300 text-sm px-3 py-1.5 rounded-lg border border-gray-600">
+          ✕ रद्द
+        </button>
+        <span className="text-white font-semibold text-sm">✏️ फोटो संपादित करें</span>
+        <button onClick={handleSave} disabled={saving}
+          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg font-bold">
+          {saving ? '…' : '✓ सहेजें'}
+        </button>
+      </div>
+
+      {/* Canvas fills ALL remaining space — canvas pixel dims = container CSS dims */}
+      <div ref={containerRef} className="flex-1 min-h-0" style={{ position: 'relative' }}>
+        <canvas
+          ref={canvasRef}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
+                   cursor: tool === 'crop' ? 'crosshair' : 'default' }}
+          onMouseDown={onPointerDown}  onMouseMove={onPointerMove}
+          onMouseUp={onPointerUp}      onMouseLeave={onPointerUp}
+          onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
+        />
+      </div>
+
+      {/* Tool panel */}
+      <div className="bg-gray-900 px-4 pt-3 pb-4 shrink-0 space-y-3">
+        <div className="flex gap-2">
+          {[{ k: 'adjust', l: '⚙️ एडजस्ट' }, { k: 'crop', l: '✂️ क्रॉप' }].map(t => (
+            <button key={t.k} onClick={() => setTool(t.k)}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors
+                ${tool === t.k ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        {tool === 'adjust' && (
+          <div className="space-y-3">
+            {SLIDERS.map(({ label, v, set, min, max }) => (
+              <div key={label} className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-28 shrink-0">{label}</span>
+                <input type="range" min={min} max={max} value={v}
+                  onChange={e => set(+e.target.value)}
+                  className="flex-1 accent-emerald-500 cursor-pointer" />
+                <span className="text-xs text-gray-300 w-9 text-right tabular-nums">
+                  {v > 0 ? '+' : ''}{v}
+                </span>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setRotation(r => (r - 90 + 360) % 360)}
+                className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">↺ बाएं</button>
+              <button onClick={() => setRotation(r => (r + 90) % 360)}
+                className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">↻ दाएं</button>
+              <button onClick={reset}
+                className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-red-400 rounded-lg text-sm">↩ रीसेट</button>
+            </div>
+          </div>
+        )}
+
+        {tool === 'crop' && (
+          <div className="space-y-2">
+            <p className="text-xs text-center text-gray-400">
+              {hasCrop ? '✅ क्रॉप चुना गया — ऊपर सहेजें दबाएं' : 'फोटो पर ड्रैग करके क्रॉप चुनें'}
+            </p>
+            {hasCrop && (
+              <button onClick={clearCrop}
+                className="w-full py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm">
+                ✕ क्रॉप हटाएं
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

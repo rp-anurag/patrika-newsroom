@@ -279,6 +279,25 @@ export const api = {
     }
   },
 
+  emailConfig: async () => {
+    try {
+      return await request('/alerts/email-config');
+    } catch {
+      return { configured: false, host: '', user: '', from: '', port: '587' };
+    }
+  },
+
+  sendEmail: async (payload) => {
+    try {
+      return await request('/alerts/send-email', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+
   // ── Field Reporter Portal login (employee table, MD5 passwords) ─────────────
   reporterLogin: async (username, password) => {
     const data = await request('/field/reporter-login', {

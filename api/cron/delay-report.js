@@ -2,7 +2,7 @@
  * CRON: Daily Page Delay Report — runs at 8:00 AM IST every day.
  *
  * What it does:
- *   1. Fetches yesterday's production data (gmg_raj + gmg_mpcg editions)
+ *   1. Fetches today's production data (gmg_raj + gmg_mpcg editions)
  *   2. Groups delayed editions by branch/unit
  *   3. For each delayed branch, finds the Desk Head & RE from `user` table
  *      whose telegram_chat_id is configured
@@ -67,13 +67,14 @@ function fmtTime(dt) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-function yesterday() {
+function todayIST() {
   const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  // Use IST local date (UTC+5:30) to avoid UTC date being 1 day behind after midnight IST
+  const ist = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
+  return ist.toISOString().slice(0, 10);
 }
 
-// ── Fetch yesterday's delayed editions grouped by unit/branch ─────────────────
+// ── Fetch today's delayed editions grouped by unit/branch ────────────────────
 async function fetchDelayedByBranch(date) {
   // GMG file names start with the publish date as ddmmyyyy → a LIKE prefix uses the
   // index on input_file instead of scanning (STR_TO_DATE/REGEXP defeated the index).
@@ -196,7 +197,7 @@ async function runDelayReport(dateOverride) {
     return { skipped: true, reason: 'no token' };
   }
 
-  const date    = dateOverride || yesterday();
+  const date    = dateOverride || todayIST();
   const results = { date, sent: [], failed: [], noRecipients: [], noDelays: false };
 
   let byBranch;

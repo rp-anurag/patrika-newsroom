@@ -48,15 +48,17 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // Ensure is_active column exists; remember whether we can use it
+    // Ensure required columns exist
     const hasIsActive = await ensureColumn('users', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1');
+    await ensureColumn('users', 'email_id', 'VARCHAR(255) DEFAULT NULL');
 
     // ── Pull eligible employees from HR table ─────────────────────────────
     let employees;
     try {
       employees = await query(
         `SELECT pan_no, EMPNAME, Story_Type, State, Branch,
-                COALESCE(is_emp_working, 0) AS is_emp_working
+                COALESCE(is_emp_working, 0) AS is_emp_working,
+                Email_ID
          FROM \`user\`
          WHERE Story_Type IN ('State Head', 'RE')
            AND pan_no IS NOT NULL
@@ -91,9 +93,10 @@ module.exports = async (req, res) => {
       const username  = String(emp.pan_no).trim();
       const name      = (emp.EMPNAME || username).trim();
       const role      = ROLE_MAP[emp.Story_Type] || 'Regional Editor';
-      const state     = emp.State  || null;
-      const branch    = emp.Branch || null;
+      const state     = emp.State    || null;
+      const branch    = emp.Branch   || null;
       const is_active = emp.is_emp_working === 1 ? 1 : 0;
+      const email_id  = emp.Email_ID || null;
 
       if (existingSet.has(username)) {
         // ── Update — never touch password_hash ───────────────────────────
@@ -104,42 +107,44 @@ module.exports = async (req, res) => {
                     role      = ?,
                     state     = ?,
                     branch    = ?,
-                    is_active = ?
+                    is_active = ?,
+                    email_id  = ?
               WHERE username  = ?`,
-            [name, role, state, branch, is_active, username]
+            [name, role, state, branch, is_active, email_id, username]
           );
         } else {
           await query(
             `UPDATE users
-                SET name   = ?,
-                    role   = ?,
-                    state  = ?,
-                    branch = ?
+                SET name     = ?,
+                    role     = ?,
+                    state    = ?,
+                    branch   = ?,
+                    email_id = ?
               WHERE username = ?`,
-            [name, role, state, branch, username]
+            [name, role, state, branch, email_id, username]
           );
         }
         updated++;
-        details.push({ action: 'updated', username, name, role, state, branch, is_active });
+        details.push({ action: 'updated', username, name, role, state, branch, is_active, email_id });
       } else {
         // ── Create — initial password = PAN number ────────────────────────
         const password_hash = await bcrypt.hash(username, 10);
         if (hasIsActive) {
           await query(
-            `INSERT INTO users (username, name, password_hash, role, state, branch, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [username, name, password_hash, role, state, branch, is_active]
+            `INSERT INTO users (username, name, password_hash, role, state, branch, is_active, email_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [username, name, password_hash, role, state, branch, is_active, email_id]
           );
         } else {
           await query(
-            `INSERT INTO users (username, name, password_hash, role, state, branch)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [username, name, password_hash, role, state, branch]
+            `INSERT INTO users (username, name, password_hash, role, state, branch, email_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [username, name, password_hash, role, state, branch, email_id]
           );
         }
-        existingSet.add(username); // prevent duplicates if pan_no repeated in HR
+        existingSet.add(username);
         created++;
-        details.push({ action: 'created', username, name, role, state, branch, is_active });
+        details.push({ action: 'created', username, name, role, state, branch, is_active, email_id });
       }
     }
 
