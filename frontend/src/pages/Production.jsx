@@ -1040,11 +1040,13 @@ function PageRow({ page, edStart, edEnd }) {
 }
 
 function PageJourneyTab({ date, setDate, shiftDate }) {
+  const { state: globalState, branch: globalBranch } = useApp();
   const [journeyData, setJourneyData] = useState(null);
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
   const [activeEd,    setActiveEd]    = useState(null);
   const [sortBy,      setSortBy]      = useState('page');
+  const [edSearch,    setEdSearch]    = useState('');
 
   const load = useCallback((d) => {
     setLoading(true); setError('');
@@ -1056,19 +1058,50 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
         if (!r.ok) return r.json().then(e => { throw new Error(e.error || `HTTP ${r.status}`); });
         return r.json();
       })
-      .then(data => {
-        setJourneyData(data);
-        if (data.editions?.length) setActiveEd(data.editions[0].code);
-        else setActiveEd(null);
-      })
+      .then(data => { setJourneyData(data); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(date); }, [date]);
 
-  const editions     = journeyData?.editions || [];
-  const activeEdn    = editions.find(e => e.code === activeEd) || editions[0];
+  const allEditions = journeyData?.editions || [];
+
+  // Normalise state name for comparison (mirrors backend STATE_NORM)
+  const normSt = s => (s || '').trim().toLowerCase()
+    .replace('madhya pradesh', 'mp').replace('chhattisgarh', 'cg').replace('rajasthan', 'raj');
+
+  // Apply global state / branch filter + edition search
+  const editions = useMemo(() => {
+    let list = allEditions;
+    if (globalState && globalState !== 'All') {
+      list = list.filter(e => normSt(e.state) === normSt(globalState) || !e.state);
+    }
+    if (globalBranch && globalBranch !== 'All') {
+      list = list.filter(e =>
+        (e.unit || '').toLowerCase() === globalBranch.toLowerCase() || !e.unit
+      );
+    }
+    if (edSearch) {
+      const q = edSearch.toLowerCase();
+      list = list.filter(e =>
+        (e.edition_name || '').toLowerCase().includes(q) ||
+        (e.unit         || '').toLowerCase().includes(q) ||
+        (e.district     || '').toLowerCase().includes(q) ||
+        (e.code         || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [allEditions, globalState, globalBranch, edSearch]);
+
+  // Reset active edition when filter changes
+  useEffect(() => {
+    if (!editions.find(e => e.code === activeEd)) {
+      setActiveEd(editions[0]?.code || null);
+    }
+  }, [editions]);
+
+  const activeEdn = editions.find(e => e.code === activeEd) || editions[0];
 
 
   // Sort pages
@@ -1122,6 +1155,14 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
         <button onClick={() => load(date)} className="btn-ghost p-1.5" title="Refresh">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
         </button>
+        {/* Edition search */}
+        <input
+          type="text"
+          placeholder="Edition खोजें…"
+          value={edSearch}
+          onChange={e => setEdSearch(e.target.value)}
+          className="input py-1.5 text-sm w-40"
+        />
         {/* Edition dropdown */}
         {editions.length > 0 && (
           <select
@@ -1137,6 +1178,11 @@ function PageJourneyTab({ date, setDate, shiftDate }) {
               </option>
             ))}
           </select>
+        )}
+        {editions.length > 0 && (
+          <span className="text-xs whitespace-nowrap" style={{ color: 'var(--muted)' }}>
+            {editions.length} edition{editions.length !== 1 ? 's' : ''}
+          </span>
         )}
         {activeEdn && (
           <button onClick={downloadJourney} className="btn-ghost flex items-center gap-1.5 text-sm ml-auto">

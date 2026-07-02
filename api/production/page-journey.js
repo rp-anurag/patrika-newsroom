@@ -174,7 +174,9 @@ module.exports = async function handler(req, res) {
           );
 
           const first_upload    = versions[0]?.first_time   || null;
-          const last_upload     = versions[versions.length - 1]?.last_time || null;
+          // MAX last_time across all versions (not just the last-sorted version)
+          const last_upload     = versions.reduce((max, v) =>
+            (!max || (v.last_time && v.last_time > max)) ? v.last_time : max, null);
           const duration_min    = (first_upload && last_upload)
             ? Math.round((new Date(last_upload) - new Date(first_upload)) / 60000)
             : 0;
