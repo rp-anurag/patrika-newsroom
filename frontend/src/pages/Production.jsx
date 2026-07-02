@@ -929,7 +929,10 @@ export default function Production() {
 function fmtT(dt) {
   if (!dt) return '—';
   const d = new Date(dt);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  if (isNaN(d)) return '—';
+  // GMG inserts IST timestamps; mysql2 timezone:'Z' labels them UTC, so
+  // getUTCHours() recovers the original IST value without a double +5:30 shift
+  return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 
 // Duration helper
