@@ -177,8 +177,11 @@ module.exports = async function handler(req, res) {
           );
 
           const first_upload    = versions[0]?.first_time   || null;
-          // MAX last_time across all versions (not just the last-sorted version)
-          const last_upload     = versions.reduce((max, v) =>
+          // Release time excludes REV files — MAX last_time across non-REV versions
+          // (falls back to all versions if a page only has REV uploads)
+          const nonRev          = versions.filter(v => v.rev_no === 0);
+          const lastPool        = nonRev.length ? nonRev : versions;
+          const last_upload     = lastPool.reduce((max, v) =>
             (!max || (v.last_time && v.last_time > max)) ? v.last_time : max, null);
           const duration_min    = (first_upload && last_upload)
             ? Math.round((new Date(last_upload) - new Date(first_upload)) / 60000)

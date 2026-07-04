@@ -75,6 +75,7 @@ const RELEASES_SQL = (tbl, region) => `
   FROM \`${tbl}\`
   WHERE input_file LIKE ?
     AND date_time_pdf IS NOT NULL
+    AND input_file NOT LIKE '%\\_REV\\_%'
   GROUP BY pub_date, code
 `;
 
