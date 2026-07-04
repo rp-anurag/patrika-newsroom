@@ -6,6 +6,7 @@ import {
 import {
   Newspaper, CheckSquare, MapPin, TrendingUp, Camera, AlertTriangle,
   Loader2, RefreshCw, ChevronLeft, ChevronRight, Download, Search, Clock, Navigation,
+  Send, ClipboardList,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
@@ -37,9 +38,18 @@ function markerColor(remark) {
 }
 
 // ── Tile ──────────────────────────────────────────────────────────────────────
-function Tile({ icon: Icon, label, value, sub, color = '#3b82f6' }) {
+function Tile({ icon: Icon, label, value, sub, color = '#3b82f6', onClick, active }) {
   return (
-    <div className="card p-4 flex items-start gap-3">
+    <div
+      className="card p-4 flex items-start gap-3"
+      onClick={onClick}
+      style={{
+        cursor: onClick ? 'pointer' : undefined,
+        outline: active ? `2px solid ${color}` : undefined,
+        outlineOffset: active ? '-2px' : undefined,
+        background: active ? color + '12' : undefined,
+      }}
+    >
       <span className="inline-flex rounded-lg p-2 mt-0.5" style={{ background: color + '20', color }}>
         <Icon size={18} />
       </span>
@@ -411,13 +421,61 @@ async function fetchGeoName(lat, lng) {
   return '';
 }
 
+// Home/Office check-ins are flagged in red — reporter was not in the field.
+// Predefined values in visit_report are 'Home' and 'Patrika Office'; custom
+// entries start with 'Other ' (e.g. 'Other Sdm office') and must NOT match.
+const isHomeOffice = label => {
+  const l = (label || '').trim().toLowerCase();
+  return l === 'home' || l === 'office' || l === 'patrika office';
+};
+
 // ── VisitsTab ─────────────────────────────────────────────────────────────────
-function VisitsTab({ data }) {
+function VisitsTab({ data, date }) {
   const { visits } = data;
-  const [selected,  setSelected]  = useState(null);
-  const [search,    setSearch]    = useState('');
-  const [showAll,   setShowAll]   = useState(false);
-  const [geoNames,  setGeoNames]  = useState({});   // key → geocoded name
+  const { isAdmin, user } = useApp();
+  const canManageAlerts = isAdmin() || ['State Head', 'Management'].includes(user?.role);
+  const [selected,     setSelected]     = useState(null);
+  const [search,       setSearch]       = useState('');
+  const [showAll,      setShowAll]      = useState(false);
+  const [geoNames,     setGeoNames]     = useState({});
+  const [labelFilter,  setLabelFilter]  = useState(null); // null | 'home' | 'office'
+  const [alertSending, setAlertSending] = useState(false);
+  const [alertResult,  setAlertResult]  = useState(null);
+  const [showLogs,     setShowLogs]     = useState(false);
+  const [alertLogs,    setAlertLogs]    = useState([]);
+  const [logsLoading,  setLogsLoading]  = useState(false);
+
+  const alertFetch = (url, opts = {}) => {
+    const token = localStorage.getItem('pk_token');
+    return fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+  };
+
+  const sendAlert = async () => {
+    if (!window.confirm(`Send Home/Office visit alert to all REs for ${date}?`)) return;
+    setAlertSending(true); setAlertResult(null);
+    try {
+      const r = await alertFetch('/api/pages/home-office-alert', { method: 'POST', body: JSON.stringify({ date }) });
+      const j = await r.json();
+      setAlertResult(j);
+      if (showLogs) fetchLogs();
+    } catch (e) { setAlertResult({ ok: false, error: e.message }); }
+    finally { setAlertSending(false); }
+  };
+
+  const fetchLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const r = await alertFetch('/api/pages/home-office-alert');
+      const j = await r.json();
+      setAlertLogs(j.logs || []);
+    } catch { setAlertLogs([]); }
+    finally { setLogsLoading(false); }
+  };
+
+  const toggleLogs = () => {
+    if (!showLogs) fetchLogs();
+    setShowLogs(s => !s);
+  };
 
   const remarkData = visits.by_remark;
   const persons    = visits.persons ?? [];
@@ -454,20 +512,121 @@ function VisitsTab({ data }) {
   }, [persons]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return persons;
+    let list = persons;
+    if (labelFilter === 'home')   list = list.filter(p => (p.label || '').trim().toLowerCase() === 'home');
+    if (labelFilter === 'office') list = list.filter(p => (p.label || '').trim().toLowerCase() === 'patrika office');
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return persons.filter(p =>
+    return list.filter(p =>
       p.name.toLowerCase().includes(q) ||
       p.branch.toLowerCase().includes(q) ||
       (p.purpose || '').toLowerCase().includes(q) ||
       (p.label || p.location || '').toLowerCase().includes(q)
     );
-  }, [persons, search]);
+  }, [persons, search, labelFilter]);
 
   const visible = showAll ? filtered : filtered.slice(0, 25);
 
+  const vs = visits.summary;
+
   return (
     <div className="space-y-5">
+
+      {/* ── Admin: Send Alert + Report ───────────────────────────────────────── */}
+      {canManageAlerts && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              className="btn flex items-center gap-2 text-sm"
+              style={{ background: '#dc2626', color: '#fff' }}
+              onClick={sendAlert}
+              disabled={alertSending}
+            >
+              {alertSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              {alertSending ? 'Sending…' : 'Send Home/Office Alert'}
+            </button>
+            <button
+              className="btn-ghost flex items-center gap-2 text-sm"
+              onClick={toggleLogs}
+            >
+              <ClipboardList size={14} />
+              {showLogs ? 'Hide Report' : 'View Report'}
+            </button>
+            {alertResult && (
+              <span className="text-xs font-medium" style={{ color: alertResult.ok ? '#16a34a' : '#dc2626' }}>
+                {alertResult.ok
+                  ? alertResult.skipped ? 'No home/office visits found for this date.' : `✓ Sent: ${alertResult.sent}, Failed: ${alertResult.failed}`
+                  : `✗ ${alertResult.error}`}
+              </span>
+            )}
+          </div>
+
+          {showLogs && (
+            <SectionCard title="Home/Office Visit Alert Report">
+              {logsLoading
+                ? <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--muted)' }} /></div>
+                : alertLogs.length === 0
+                  ? <p className="text-sm py-6 text-center" style={{ color: 'var(--muted)' }}>No alerts sent yet.</p>
+                  : <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                            <th className="pb-2 pr-3 text-left">#</th>
+                            <th className="pb-2 pr-3 text-left">RE Name</th>
+                            <th className="pb-2 pr-3 text-left">Branch</th>
+                            <th className="pb-2 pr-3 text-left">Date</th>
+                            <th className="pb-2 pr-3 text-left">🏠 Home</th>
+                            <th className="pb-2 pr-3 text-left">🏢 Office</th>
+                            <th className="pb-2 pr-3 text-left">Reporters</th>
+                            <th className="pb-2 pr-3 text-left">Status</th>
+                            <th className="pb-2 pr-3 text-left">By</th>
+                            <th className="pb-2 text-left">Sent At</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {alertLogs.map((l, i) => (
+                            <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td className="py-2 pr-3" style={{ color: 'var(--muted)' }}>{i + 1}</td>
+                              <td className="py-2 pr-3 font-semibold">{l.re_name}</td>
+                              <td className="py-2 pr-3">{l.branch}</td>
+                              <td className="py-2 pr-3 font-mono">{l.visit_date ? String(l.visit_date).slice(0,10) : '—'}</td>
+                              <td className="py-2 pr-3 font-bold" style={{ color: '#dc2626' }}>{l.home_cnt ?? 0}</td>
+                              <td className="py-2 pr-3 font-bold" style={{ color: '#ea580c' }}>{l.office_cnt ?? 0}</td>
+                              <td className="py-2 pr-3" style={{ color: 'var(--muted)', maxWidth: 200 }}>{l.reporter_list || '—'}</td>
+                              <td className="py-2 pr-3">
+                                <span className="font-semibold" style={{ color: l.status === 'sent' ? '#16a34a' : '#dc2626' }}>
+                                  {l.status === 'sent' ? '✓ Sent' : '✗ Failed'}
+                                </span>
+                                {l.error_msg && <div className="text-xs" style={{ color: '#dc2626' }}>{l.error_msg}</div>}
+                              </td>
+                              <td className="py-2 pr-3" style={{ color: 'var(--muted)' }}>{l.triggered_by}</td>
+                              <td className="py-2 text-xs font-mono" style={{ color: 'var(--muted)' }}>{l.sent_at}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+              }
+            </SectionCard>
+          )}
+        </div>
+      )}
+
+      {/* ── Home / Office summary cards ──────────────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-3">
+        <Tile icon={MapPin} label="Total Visits"  value={vs.total}              color="#10b981"
+          onClick={() => { setLabelFilter(null); setSelected(null); setShowAll(false); }}
+          active={labelFilter === null}
+        />
+        <Tile icon={MapPin} label="Home Visits"   value={vs.home_visits ?? 0}   color="#dc2626"
+          onClick={() => { setLabelFilter(f => f === 'home'   ? null : 'home');   setSelected(null); setShowAll(false); }}
+          active={labelFilter === 'home'}
+        />
+        <Tile icon={MapPin} label="Office Visits" value={vs.office_visits ?? 0} color="#ea580c"
+          onClick={() => { setLabelFilter(f => f === 'office' ? null : 'office'); setSelected(null); setShowAll(false); }}
+          active={labelFilter === 'office'}
+        />
+      </div>
 
       {/* ── Visits by Type ──────────────────────────────────────────────────── */}
       <SectionCard title="Visits by Type / Remark">
@@ -488,7 +647,7 @@ function VisitsTab({ data }) {
 
       {/* ── Person-wise visits ───────────────────────────────────────────────── */}
       <SectionCard
-        title={`Person-wise Visits · ${filtered.length} reporter${filtered.length !== 1 ? 's' : ''}`}
+        title={`Person-wise Visits${labelFilter === 'home' ? ' · Home' : labelFilter === 'office' ? ' · Patrika Office' : ''} · ${filtered.length} reporter${filtered.length !== 1 ? 's' : ''}`}
         action={
           <div className="relative">
             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
@@ -514,13 +673,14 @@ function VisitsTab({ data }) {
                   <th className="pb-2 pr-3 text-left font-semibold">Out</th>
                   <th className="pb-2 pr-3 text-left font-semibold">Duration</th>
                   <th className="pb-2 pr-3 text-left font-semibold">Purpose</th>
+                  <th className="pb-2 pr-3 text-left font-semibold">Label</th>
                   <th className="pb-2 pr-3 text-left font-semibold">Nearby Location</th>
                   <th className="pb-2 text-left font-semibold">GPS Address</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.length === 0 && (
-                  <tr><td colSpan={8} className="py-8 text-center" style={{ color: 'var(--muted)' }}>
+                  <tr><td colSpan={9} className="py-8 text-center" style={{ color: 'var(--muted)' }}>
                     {search ? 'No reporters match your search.' : 'No visit data for this date.'}
                   </td></tr>
                 )}
@@ -550,6 +710,18 @@ function VisitsTab({ data }) {
                         </span>
                       </td>
                       <td className="py-2 pr-3" style={{ color: 'var(--muted)', maxWidth: 110 }}>{p.purpose}</td>
+                      <td className="py-2 pr-3 text-xs" style={{ maxWidth: 120 }}>
+                        {p.label ? (
+                          <span
+                            className="font-semibold"
+                            style={isHomeOffice(p.label)
+                              ? { color: '#dc2626', background: '#dc262615', padding: '2px 6px', borderRadius: 6 }
+                              : { color: 'var(--text)' }}
+                          >
+                            {p.label}
+                          </span>
+                        ) : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      </td>
                       <td className="py-2 pr-3 font-medium text-xs" style={{ maxWidth: 160 }}>
                         {p.lat ? (
                           geoNames[geoKey(p.lat, p.lng)]
@@ -602,6 +774,14 @@ function VisitsTab({ data }) {
                   </div>
                   {selected.transport && (
                     <div className="text-xs"><span style={{ color: 'var(--muted)' }}>Transport: </span>{selected.transport}</div>
+                  )}
+                  {selected.label && (
+                    <div className="text-xs">
+                      <span style={{ color: 'var(--muted)' }}>Label: </span>
+                      <span className="font-semibold" style={{ color: isHomeOffice(selected.label) ? '#dc2626' : 'var(--text)' }}>
+                        {selected.label}
+                      </span>
+                    </div>
                   )}
                   {selected.lat && geoNames[geoKey(selected.lat, selected.lng)] && (
                     <div className="mt-1 text-xs font-semibold" style={{ color: 'var(--brand)' }}>
@@ -769,7 +949,7 @@ export default function PageMonitoring() {
           {tab === 'overview' && <OverviewTab data={data} />}
           {tab === 'news'     && <NewsTab     data={data} />}
           {tab === 'qc'       && <QCTab       data={data} />}
-          {tab === 'visits'   && <VisitsTab   data={data} />}
+          {tab === 'visits'   && <VisitsTab   data={data} date={date} />}
         </>
       )}
     </div>

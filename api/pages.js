@@ -86,6 +86,7 @@ module.exports = async function handler(req, res) {
       newsDay, newsTrend,
       qcSummary, qcByCat, qcBySeverity, qcRecent,
       visitSummary, visitByRemark, visitByTransport, visitMarkers, visitPersons,
+      regLocations,
     ] = await Promise.all([
 
       // ── News: single day aggregate ──────────────────────────────────────────
@@ -138,7 +139,9 @@ module.exports = async function handler(req, res) {
 
       // ── Visits: summary ─────────────────────────────────────────────────────
       query(`SELECT COUNT(*) AS total,
-          SUM(CASE WHEN LATITUDE IS NOT NULL AND LATITUDE != '' THEN 1 ELSE 0 END) AS with_loc
+          SUM(CASE WHEN LATITUDE IS NOT NULL AND LATITUDE != '' THEN 1 ELSE 0 END) AS with_loc,
+          SUM(CASE WHEN TRIM(label_in_location) = 'Home' THEN 1 ELSE 0 END)           AS home_visits,
+          SUM(CASE WHEN TRIM(label_in_location) = 'Patrika Office' THEN 1 ELSE 0 END) AS office_visits
         FROM visit_report WHERE visit_date = ?${visitWhere}`,
         [date, ...visitParams]).catch(() => [{}]),
 
@@ -195,12 +198,55 @@ module.exports = async function handler(req, res) {
           ${filterState  && filterState  !== 'All' ? 'AND u.State = ?'  : ''}
           ${filterBranch && filterBranch !== 'All' ? 'AND u.Branch = ?' : ''}
         ORDER BY u.EMPNAME ASC
-        LIMIT 300`,
+        LIMIT 2000`,
         [date,
          ...(filterState  && filterState  !== 'All' ? [filterState]  : []),
          ...(filterBranch && filterBranch !== 'All' ? [filterBranch] : []),
         ]).catch(() => []),
+
+      // ── Registered locations (Home / Patrika Office / Other per employee) ───
+      query(`SELECT pan_no, location, other_location,
+               CAST(latitude  AS DECIMAL(10,7)) AS lat,
+               CAST(longitude AS DECIMAL(10,7)) AS lng
+             FROM registration_location
+             WHERE latitude IS NOT NULL AND latitude != ''
+               AND longitude IS NOT NULL AND longitude != ''`).catch(() => []),
     ]);
+
+    // ── GPS label matching against registration_location ──────────────────────
+    // A visit within 100 m of a registered spot gets that spot's label.
+    // 'Home' spots only match the same employee (pan_no); office/other match anyone.
+    const R = 6371000; // earth radius, metres
+    const toRad = d => d * Math.PI / 180;
+    const distM = (lat1, lng1, lat2, lng2) => {
+      const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+
+    const regList = regLocations
+      .map(r => ({
+        pan:   String(r.pan_no || '').trim().toUpperCase(),
+        loc:   String(r.location || '').trim(),
+        other: String(r.other_location || '').trim(),
+        lat:   Number(r.lat),
+        lng:   Number(r.lng),
+      }))
+      .filter(r => r.lat && r.lng);
+
+    function gpsLabel(panNo, lat, lng) {
+      if (lat == null || lng == null) return null;
+      const pan = String(panNo || '').trim().toUpperCase();
+      let best = null, bestDist = 100; // 100 m threshold
+      for (const reg of regList) {
+        if (reg.loc.toLowerCase() === 'home' && reg.pan !== pan) continue;
+        const d = distM(lat, lng, reg.lat, reg.lng);
+        if (d <= bestDist) { bestDist = d; best = reg; }
+      }
+      if (!best) return null;
+      return best.other ? `${best.loc} ${best.other}`.trim() : best.loc;
+    }
 
     // ── Build categories list ─────────────────────────────────────────────────
     const nd = newsDay[0] || {};
@@ -211,6 +257,38 @@ module.exports = async function handler(req, res) {
 
     const sevMap = {};
     qcBySeverity.forEach(r => { sevMap[r.severity] = Number(r.cnt); });
+
+    // ── Person-wise visits with GPS-matched labels ────────────────────────────
+    const personsOut = visitPersons.map(r => {
+      const lat = Number(r.lat);
+      const lng = Number(r.lng);
+      const hasGps = lat >= 6 && lat <= 38 && lng >= 68 && lng <= 98;
+      const matched = hasGps ? gpsLabel(r.pan_no, lat, lng) : null;
+      return {
+        pan_no:   r.pan_no   || '',
+        name:     r.name     || '—',
+        branch:   r.branch   || '—',
+        state:    r.state    || '—',
+        in_time:  r.in_time  ? String(r.in_time).slice(0, 5)  : null,
+        out_time: r.out_time ? String(r.out_time).slice(0, 5) : null,
+        dur_min:  (r.dur_min != null && r.dur_min >= 0) ? Number(r.dur_min) : null,
+        purpose:  r.purpose  || '—',
+        location: r.location || '',
+        label:    matched || '',    // GPS-verified only — self-entered labels are unreliable
+        self_label: r.label || '',  // what the reporter claimed, for reference
+        label_matched: !!matched,
+        remark:   r.remark   || '',
+        transport:r.transport|| '',
+        lat:      hasGps ? lat : null,
+        lng:      hasGps ? lng : null,
+      };
+    });
+
+    // Home/Office card counts follow the GPS-matched labels so cards and table agree
+    const isHome   = l => (l || '').trim().toLowerCase() === 'home';
+    const isOffice = l => (l || '').trim().toLowerCase() === 'patrika office';
+    const homeCnt   = personsOut.filter(p => isHome(p.label)).length;
+    const officeCnt = personsOut.filter(p => isOffice(p.label)).length;
 
     return res.json({
       date,
@@ -262,8 +340,10 @@ module.exports = async function handler(req, res) {
       },
       visits: {
         summary: {
-          total:    Number((visitSummary[0] || {}).total    || 0),
-          with_loc: Number((visitSummary[0] || {}).with_loc || 0),
+          total:         Number((visitSummary[0] || {}).total    || 0),
+          with_loc:      Number((visitSummary[0] || {}).with_loc || 0),
+          home_visits:   homeCnt,
+          office_visits: officeCnt,
         },
         by_remark:    visitByRemark.map(r   => ({ name: r.remark,    value: Number(r.cnt) })),
         by_transport: visitByTransport.map(r => ({ name: r.transport, value: Number(r.cnt) })),
@@ -271,31 +351,11 @@ module.exports = async function handler(req, res) {
           lat:      Number(r.lat),
           lng:      Number(r.lng),
           location: r.location || '',
-          label:    r.label    || '',
+          label:    gpsLabel(r.pan_no, Number(r.lat), Number(r.lng)) || '',
           remark:   r.remark   || '',
           transport:r.transport|| '',
         })),
-        persons: visitPersons.map(r => {
-          const lat = Number(r.lat);
-          const lng = Number(r.lng);
-          const hasGps = lat >= 6 && lat <= 38 && lng >= 68 && lng <= 98;
-          return {
-            pan_no:   r.pan_no   || '',
-            name:     r.name     || '—',
-            branch:   r.branch   || '—',
-            state:    r.state    || '—',
-            in_time:  r.in_time  ? String(r.in_time).slice(0, 5)  : null,
-            out_time: r.out_time ? String(r.out_time).slice(0, 5) : null,
-            dur_min:  (r.dur_min != null && r.dur_min >= 0) ? Number(r.dur_min) : null,
-            purpose:  r.purpose  || '—',
-            location: r.location || '',
-            label:    r.label    || '',
-            remark:   r.remark   || '',
-            transport:r.transport|| '',
-            lat:      hasGps ? lat : null,
-            lng:      hasGps ? lng : null,
-          };
-        }),
+        persons: personsOut,
       },
     });
 

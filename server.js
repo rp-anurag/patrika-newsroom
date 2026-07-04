@@ -46,6 +46,10 @@ dueDateAlerts.register();
 const correspondentPaymentAlert = require('./api/cron/correspondent-payment-alert');
 correspondentPaymentAlert.register();
 
+// ── Cron: 11 AM IST daily — home/office visit alert to branch REs ─────────────
+const homeOfficeVisitAlert = require('./api/cron/home-office-visit-alert');
+homeOfficeVisitAlert.register();
+
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -86,7 +90,8 @@ app.all('/api/production/delay-reasons', h('./api/production/delay-reasons'));
 app.all('/api/production/page-journey',  h('./api/production/page-journey'));
 app.all('/api/production/weekly-trend',  h('./api/production/weekly-trend'));
 app.all('/api/production',               h('./api/production'));
-app.all('/api/pages',                 h('./api/pages'));
+app.all('/api/pages/home-office-alert', h('./api/cron/home-office-visit-alert-api'));
+app.all('/api/pages',                   h('./api/pages'));
 app.all('/api/reports',               h('./api/reports'));
 
 // ── Locations (states & branches from employee table) ─────────────────────────
