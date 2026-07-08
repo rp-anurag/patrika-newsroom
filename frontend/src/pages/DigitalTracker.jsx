@@ -101,7 +101,8 @@ const TABS = [
     grad:  'linear-gradient(135deg,#059669,#047857)',
     lightBg: '#d1fae5',
     lightFg: '#047857',
-    adminOnly: true,
+    teamLeadOk: true,   // visible to team_lead + admin
+    adminOnly: false,
   },
   {
     key:   'settings',
@@ -119,10 +120,15 @@ const TABS = [
 // ── Main component ────────────────────────────────────────────────────────────
 export default function DigitalTracker() {
   const { user, isAdmin, isDigitalAdmin } = useApp();
-  const canAdmin = isAdmin() || isDigitalAdmin();
+  const canAdmin   = isAdmin() || isDigitalAdmin();
+  const isTeamLead = user?.digital_role === 'team_lead';
   const [tab, setTab] = useState('dashboard');
 
-  const visibleTabs = TABS.filter(t => !t.adminOnly || canAdmin);
+  const visibleTabs = TABS.filter(t => {
+    if (t.adminOnly)   return canAdmin;
+    if (t.teamLeadOk)  return canAdmin || isTeamLead;
+    return true;
+  });
   const activeTab   = visibleTabs.find(t => t.key === tab) || visibleTabs[0];
 
   // Role badge
@@ -216,8 +222,8 @@ export default function DigitalTracker() {
       {tab === 'breaking' && (
         <BreakingNewsTab user={user} canAdmin={canAdmin} />
       )}
-      {tab === 'team-leader' && canAdmin && (
-        <TeamLeaderTab />
+      {tab === 'team-leader' && (canAdmin || isTeamLead) && (
+        <TeamLeaderTab user={user} canAdmin={canAdmin} />
       )}
       {tab === 'settings' && canAdmin && (
         <SettingsTab month={today} onRefresh={() => {}} />
@@ -1724,7 +1730,7 @@ function BreakingNewsTab({ user, canAdmin }) {
 const TODAY_TL = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 06–23
 
-function TeamLeaderTab() {
+function TeamLeaderTab({ user, canAdmin }) {
   const [date, setDate]           = useState(TODAY_TL);
   const [users, setUsers]         = useState([]);
   const [liveArts, setLiveArts]   = useState([]);
@@ -1799,8 +1805,11 @@ function TeamLeaderTab() {
   const teamLeads = users.filter(u => u.role === 'team_lead');
   const individuals = users.filter(u => u.role === 'individual');
 
-  // All unique teams
-  const teams = [...new Set(users.map(u => u.team).filter(Boolean))].sort();
+  // All unique teams — team_lead sees only their own team
+  const isTeamLead = user?.digital_role === 'team_lead';
+  const myTeam     = isTeamLead ? users.find(u => u.name === user?.name)?.team : null;
+  const allTeams   = [...new Set(users.map(u => u.team).filter(Boolean))].sort();
+  const teams      = isTeamLead && myTeam ? allTeams.filter(t => t === myTeam) : allTeams;
 
   const toggleLead = (id) => {
     setExpandedLeads(prev => {

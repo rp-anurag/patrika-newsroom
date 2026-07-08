@@ -41,6 +41,7 @@ module.exports = async function handler(req, res) {
       incharge:     u.incharge|| null,
       digital_id:   u.id,
       name:         u.name,
+      mail_id:      u.mail_id || null,
     }, 86400 * 7);  // 7-day token
 
     return res.json({

@@ -17,6 +17,11 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 function isAuthorized(user) {
   return user?.role === 'Admin' ||
+    (user?.source === 'digital' && ['digital_admin', 'team_lead'].includes(user?.digital_role));
+}
+
+function isAdmin(user) {
+  return user?.role === 'Admin' ||
     (user?.source === 'digital' && user?.digital_role === 'digital_admin');
 }
 
@@ -46,14 +51,28 @@ module.exports = function handler(req, res) {
 
   // ── GET: list users ───────────────────────────────────────────────────────
   if (req.method === 'GET') {
-    return query(`
-      SELECT id, zimbea_id, cms_id, name, team, role, state, location, mail_id, incharge,
-             is_emp_working,
-             CASE WHEN password IS NOT NULL AND password != '' THEN 1 ELSE 0 END AS has_password
-      FROM digital_user
-      ORDER BY team, name
-    `).then(rows => res.json({ users: rows }))
+    const isTeamLead = user?.source === 'digital' && user?.digital_role === 'team_lead';
+    const sql = isTeamLead
+      ? `SELECT id, zimbea_id, cms_id, name, team, role, state, location, mail_id, incharge,
+                is_emp_working,
+                CASE WHEN password IS NOT NULL AND password != '' THEN 1 ELSE 0 END AS has_password
+         FROM digital_user
+         WHERE team = (SELECT team FROM digital_user WHERE mail_id = ? LIMIT 1)
+         ORDER BY role DESC, name`
+      : `SELECT id, zimbea_id, cms_id, name, team, role, state, location, mail_id, incharge,
+                is_emp_working,
+                CASE WHEN password IS NOT NULL AND password != '' THEN 1 ELSE 0 END AS has_password
+         FROM digital_user
+         ORDER BY team, name`;
+    const params = isTeamLead ? [user.mail_id || user.email || ''] : [];
+    return query(sql, params)
+      .then(rows => res.json({ users: rows }))
       .catch(err => res.status(500).json({ error: err.message }));
+  }
+
+  // Write operations (POST/PATCH/DELETE) require admin
+  if (['POST', 'PATCH', 'DELETE'].includes(req.method) && !isAdmin(user)) {
+    return res.status(403).json({ error: 'Admin or digital_admin required' });
   }
 
   // ── DELETE ────────────────────────────────────────────────────────────────
