@@ -32,9 +32,11 @@ function getPool() {
     database:           process.env.MYSQL_DATABASE || 'editorial_reports',
     ssl:                sslOpt,
     waitForConnections: true,
-    connectionLimit:    5,       // keep low for serverless
+    connectionLimit:    10,
     queueLimit:         0,
-    timezone:           'Z',      // RDS stores UTC via NOW(); frontend formats to IST
+    timezone:           'Z',
+    enableKeepAlive:    true,
+    keepAliveInitialDelay: 10000,  // 10 s — ping idle connections before MySQL drops them
   });
 
   return pool;
@@ -48,8 +50,17 @@ function getPool() {
  */
 async function query(sql, params = []) {
   const db = getPool();
-  const [rows] = await db.execute(sql, params);
-  return rows;
+  try {
+    const [rows] = await db.execute(sql, params);
+    return rows;
+  } catch (err) {
+    // Retry once on stale-connection errors (ECONNRESET, PROTOCOL_CONNECTION_LOST, etc.)
+    if (err.code === 'ECONNRESET' || err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ENOTFOUND') {
+      const [rows] = await db.execute(sql, params);
+      return rows;
+    }
+    throw err;
+  }
 }
 
 module.exports = { query, getPool };
