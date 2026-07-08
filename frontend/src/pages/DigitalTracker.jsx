@@ -445,13 +445,18 @@ function ExcelUploadCard({ title, icon: Icon, description, onUpload, onDone, col
   );
 }
 
+const EMPTY_USER = { name: '', mail_id: '', team: '', role: 'individual', incharge: '', cms_id: '', password: '' };
+
 function UserManagementCard() {
-  const [users, setUsers]   = useState([]);
+  const [users, setUsers]     = useState([]);
   const [loading, setLoading] = useState(false);
-  const [err, setErr]       = useState('');
+  const [err, setErr]         = useState('');
   const [editing, setEditing] = useState(null);
-  const [showPwd, setShowPwd] = useState({});
-  const [search, setSearch] = useState('');
+  const [search, setSearch]   = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState(EMPTY_USER);
+  const [addErr, setAddErr]   = useState('');
+  const [addBusy, setAddBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -473,9 +478,30 @@ function UserManagementCard() {
     catch (e) { alert(e.message); }
   };
 
+  const addUser = async () => {
+    if (!addForm.name.trim())    return setAddErr('Name is required');
+    if (!addForm.mail_id.trim()) return setAddErr('Email is required');
+    if (!addForm.team.trim())    return setAddErr('Team is required');
+    if (!addForm.password.trim()) return setAddErr('Password is required');
+    setAddErr(''); setAddBusy(true);
+    try {
+      await api.createDigitalUser(addForm);
+      setShowAdd(false);
+      setAddForm(EMPTY_USER);
+      load();
+    } catch (e) { setAddErr(e.message); }
+    finally { setAddBusy(false); }
+  };
+
+  const setAdd = (k, v) => setAddForm(f => ({ ...f, [k]: v }));
+
   const filtered = users.filter(u =>
     !search || u.name?.toLowerCase().includes(search.toLowerCase()) || u.mail_id?.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Unique teams for datalist
+  const teamOptions = [...new Set(users.map(u => u.team).filter(Boolean))].sort();
+  const leadOptions = users.filter(u => u.role === 'team_lead').map(u => u.name);
 
   return (
     <SectionCard title={`Digital Users (${users.length})`}>
@@ -486,7 +512,77 @@ function UserManagementCard() {
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <button className="btn-ghost px-2.5 py-2" onClick={load}><RefreshCw size={14} /></button>
+        <button
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{ background: showAdd ? '#fee2e2' : '#dbeafe', color: showAdd ? '#b91c1c' : '#1d4ed8' }}
+          onClick={() => { setShowAdd(s => !s); setAddErr(''); setAddForm(EMPTY_USER); }}>
+          {showAdd ? <><X size={14} /> Cancel</> : <><Plus size={14} /> Add User</>}
+        </button>
       </div>
+
+      {/* ── Add User Form ──────────────────────────────────────────────── */}
+      {showAdd && (
+        <div className="mb-4 rounded-xl border p-4 space-y-3"
+          style={{ borderColor: '#93c5fd', background: '#eff6ff' }}>
+          <div className="text-sm font-semibold" style={{ color: '#1d4ed8' }}>New User</div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="label text-xs">Full Name *</label>
+              <input className="input py-1.5 text-sm" placeholder="Rahul Sharma"
+                value={addForm.name} onChange={e => setAdd('name', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Email *</label>
+              <input className="input py-1.5 text-sm" type="email" placeholder="rahul.sharma@in.patrika.com"
+                value={addForm.mail_id} onChange={e => setAdd('mail_id', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Password *</label>
+              <input className="input py-1.5 text-sm" type="password" placeholder="Patrika@2026"
+                value={addForm.password} onChange={e => setAdd('password', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Team *</label>
+              <input className="input py-1.5 text-sm" placeholder="Madhya Pradesh" list="tl-teams"
+                value={addForm.team} onChange={e => setAdd('team', e.target.value)} />
+              <datalist id="tl-teams">{teamOptions.map(t => <option key={t} value={t} />)}</datalist>
+            </div>
+            <div>
+              <label className="label text-xs">Role</label>
+              <select className="input py-1.5 text-sm" value={addForm.role} onChange={e => setAdd('role', e.target.value)}>
+                <option value="individual">individual</option>
+                <option value="team_lead">team_lead</option>
+                <option value="digital_admin">digital_admin</option>
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Team Lead (incharge)</label>
+              <input className="input py-1.5 text-sm" placeholder="Manish Geete" list="tl-leads"
+                value={addForm.incharge} onChange={e => setAdd('incharge', e.target.value)} />
+              <datalist id="tl-leads">{leadOptions.map(l => <option key={l} value={l} />)}</datalist>
+            </div>
+            <div>
+              <label className="label text-xs">CMS ID</label>
+              <input className="input py-1.5 text-sm" placeholder="12345"
+                value={addForm.cms_id} onChange={e => setAdd('cms_id', e.target.value)} />
+            </div>
+          </div>
+          {addErr && <div className="text-xs" style={{ color: '#dc2626' }}>{addErr}</div>}
+          <div className="flex gap-2">
+            <button
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity"
+              style={{ background: '#2563eb', opacity: addBusy ? 0.6 : 1 }}
+              onClick={addUser} disabled={addBusy}>
+              {addBusy ? <RefreshCw size={13} className="animate-spin" /> : <Plus size={13} />}
+              {addBusy ? 'Saving…' : 'Save User'}
+            </button>
+            <button className="btn-ghost px-3 py-2 text-sm"
+              onClick={() => { setShowAdd(false); setAddForm(EMPTY_USER); setAddErr(''); }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {err && <div className="text-sm mb-2" style={{ color: '#dc2626' }}>{err}</div>}
 
