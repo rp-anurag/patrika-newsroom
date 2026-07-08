@@ -176,7 +176,7 @@ module.exports = function handler(req, res) {
 
       const result = await query(
         'INSERT INTO digital_user (name, team, role, state, location, mail_id, incharge, cms_id, password, is_emp_working) VALUES (?,?,?,?,?,?,?,?,?,1)',
-        [name, team || null, finalRole, state || null, location || null, mail_id, incharge || null, cms_id || null, hash]
+        [name, team || '', finalRole, state || '', location || '', mail_id, incharge || '', cms_id || '', hash]
       );
       return res.json({ ok: true, id: result.insertId });
     })().catch(err => res.status(500).json({ error: err.message }));
