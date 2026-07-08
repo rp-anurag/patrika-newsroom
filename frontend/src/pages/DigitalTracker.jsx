@@ -93,6 +93,17 @@ const TABS = [
     lightFg: '#b91c1c',
   },
   {
+    key:   'team-leader',
+    label: 'Team Leader',
+    desc:  'Team-wise hourly publish monitor',
+    icon:  Users2,
+    color: '#059669',
+    grad:  'linear-gradient(135deg,#059669,#047857)',
+    lightBg: '#d1fae5',
+    lightFg: '#047857',
+    adminOnly: true,
+  },
+  {
     key:   'settings',
     label: 'Settings',
     desc:  'Users, targets & upload',
@@ -204,6 +215,9 @@ export default function DigitalTracker() {
       )}
       {tab === 'breaking' && (
         <BreakingNewsTab user={user} canAdmin={canAdmin} />
+      )}
+      {tab === 'team-leader' && canAdmin && (
+        <TeamLeaderTab />
       )}
       {tab === 'settings' && canAdmin && (
         <SettingsTab month={today} onRefresh={() => {}} />
@@ -1702,6 +1716,329 @@ function BreakingNewsTab({ user, canAdmin }) {
           )}
         </SectionCard>
       )}
+    </div>
+  );
+}
+
+// ── Team Leader Tab ───────────────────────────────────────────────────────────
+const TODAY_TL = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 06–23
+
+function TeamLeaderTab() {
+  const [date, setDate]           = useState(TODAY_TL);
+  const [users, setUsers]         = useState([]);
+  const [liveArts, setLiveArts]   = useState([]);
+  const [authorMap, setAuthorMap] = useState({});
+  const [authorsLoading, setAuthorsLoading] = useState(false);
+  const [authorsDone, setAuthorsDone]       = useState(0);
+  const [fetching, setFetching]   = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null); // { name }
+  const [expandedLeads, setExpandedLeads] = useState(new Set());
+
+  // Load users once
+  useEffect(() => {
+    setUsersLoading(true);
+    api.digitalUsers()
+      .then(r => setUsers(r.users || []))
+      .catch(() => {})
+      .finally(() => setUsersLoading(false));
+  }, []);
+
+  // Load articles + authors when date changes
+  const loadData = async (d) => {
+    setFetching(true); setLiveArts([]); setAuthorMap({}); setAuthorsDone(0); setSelectedUser(null);
+    try {
+      const res  = await api.fetchPatrikaByDate(d);
+      const arts = res.articles || [];
+      setLiveArts(arts);
+      if (arts.length) {
+        setAuthorsLoading(true);
+        const CHUNK = 100;
+        const urls  = arts.map(a => a.url).filter(Boolean);
+        let map = {};
+        for (let i = 0; i < urls.length; i += CHUNK) {
+          const chunk = urls.slice(i, i + CHUNK);
+          const r2 = await api.batchAuthors(chunk);
+          map = { ...map, ...(r2.authors || {}) };
+          setAuthorMap({ ...map });
+          setAuthorsDone(Object.keys(map).length);
+        }
+        setAuthorsLoading(false);
+      }
+    } catch (_) {}
+    finally { setFetching(false); }
+  };
+
+  useEffect(() => { loadData(date); }, [date]); // eslint-disable-line
+
+  // Build story list enriched with author names
+  const stories = liveArts.map(a => ({
+    ...a,
+    author: authorMap[a.url] || a.author || null,
+  }));
+
+  // Build hourly count per author name (normalised lowercase)
+  const hourlyByAuthor = {};
+  stories.forEach(s => {
+    if (!s.author) return;
+    const key = s.author.trim().toLowerCase();
+    const h   = s.publish_time ? parseInt(s.publish_time.slice(0, 2), 10) : -1;
+    if (!hourlyByAuthor[key]) hourlyByAuthor[key] = { total: 0, hours: {} };
+    hourlyByAuthor[key].total += 1;
+    if (h >= 0) hourlyByAuthor[key].hours[h] = (hourlyByAuthor[key].hours[h] || 0) + 1;
+  });
+
+  // Map user name → story key match
+  const userStories = (name) => {
+    const key = (name || '').trim().toLowerCase();
+    return hourlyByAuthor[key] || { total: 0, hours: {} };
+  };
+
+  // Group: team → { lead, members[] }
+  const teamLeads = users.filter(u => u.role === 'team_lead');
+  const individuals = users.filter(u => u.role === 'individual');
+
+  // All unique teams
+  const teams = [...new Set(users.map(u => u.team).filter(Boolean))].sort();
+
+  const toggleLead = (id) => {
+    setExpandedLeads(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const heatColor = (n) => {
+    if (!n) return 'transparent';
+    if (n >= 5) return '#15803d';
+    if (n >= 3) return '#22c55e';
+    if (n >= 2) return '#86efac';
+    return '#bbf7d0';
+  };
+
+  // Stories for selected user
+  const selStories = selectedUser
+    ? stories.filter(s => (s.author || '').trim().toLowerCase() === selectedUser.trim().toLowerCase())
+        .sort((a, b) => (a.publish_time || '').localeCompare(b.publish_time || ''))
+    : [];
+
+  if (usersLoading) return (
+    <div className="text-center py-16" style={{ color: 'var(--muted)' }}>
+      <RefreshCw size={20} className="animate-spin mx-auto mb-2" /> Loading team data…
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <CalendarDays size={14} style={{ color: 'var(--muted)' }} />
+          <input type="date" className="input py-1.5 text-sm" value={date} max={TODAY_TL}
+            onChange={e => { setDate(e.target.value); }} />
+        </div>
+        {(fetching || authorsLoading) && (
+          <span className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+            <RefreshCw size={12} className="animate-spin" />
+            {fetching ? 'Loading stories…' : `Loading authors… ${authorsDone}/${liveArts.length}`}
+          </span>
+        )}
+        {!fetching && !authorsLoading && liveArts.length > 0 && (
+          <span className="text-xs" style={{ color: '#16a34a' }}>
+            {liveArts.length} stories · {authorsDone} authors loaded
+          </span>
+        )}
+        <button className="btn-ghost px-2.5 py-1.5 ml-auto" onClick={() => loadData(date)} title="Refresh">
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--muted)' }}>
+        <span>Stories/hour:</span>
+        {[1, 2, 3, 5].map(n => (
+          <span key={n} className="flex items-center gap-1">
+            <span className="inline-block w-4 h-4 rounded" style={{ background: heatColor(n) }} />
+            {n === 5 ? '5+' : n}
+          </span>
+        ))}
+      </div>
+
+      {/* Story detail panel */}
+      {selectedUser && (
+        <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#059669' }}>
+          <div className="flex items-center justify-between px-4 py-3"
+            style={{ background: '#d1fae5' }}>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ background: '#059669' }}>
+                {selectedUser[0].toUpperCase()}
+              </div>
+              <span className="font-semibold text-sm" style={{ color: '#065f46' }}>{selectedUser}</span>
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: '#059669', color: '#fff' }}>
+                {selStories.length} stories
+              </span>
+            </div>
+            <button onClick={() => setSelectedUser(null)} className="btn-ghost p-1">
+              <X size={14} />
+            </button>
+          </div>
+          <div className="overflow-x-auto" style={{ maxHeight: 320, overflowY: 'auto' }}>
+            <table className="w-full text-sm">
+              <tbody>
+                {selStories.map((s, i) => (
+                  <tr key={i} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                    <td className="px-3 py-2 w-14 text-xs font-mono whitespace-nowrap" style={{ color: 'var(--muted)' }}>
+                      {s.publish_time || '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <a href={s.url} target="_blank" rel="noreferrer"
+                        className="text-sm font-medium hover:underline line-clamp-1"
+                        style={{ color: '#2563eb' }}>
+                        {s.title}
+                      </a>
+                    </td>
+                    <td className="px-3 py-2 w-28 text-xs" style={{ color: 'var(--muted)' }}>
+                      {s.category || '—'}
+                    </td>
+                    <td className="px-3 py-2 w-8">
+                      <a href={s.url} target="_blank" rel="noreferrer">
+                        <ExternalLink size={12} style={{ color: 'var(--muted)' }} />
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+                {!selStories.length && (
+                  <tr><td colSpan={4} className="px-3 py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>
+                    No stories matched — author name may differ from login name
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Teams */}
+      {teams.length === 0 && !usersLoading && (
+        <div className="text-center py-12" style={{ color: 'var(--muted)' }}>No teams found in user settings.</div>
+      )}
+
+      {teams.map(team => {
+        const lead    = teamLeads.find(u => u.team === team);
+        const members = individuals.filter(u => u.team === team);
+        const leadId  = lead?.id || team;
+        const isOpen  = expandedLeads.has(leadId);
+
+        // Team total
+        const teamTotal = [lead, ...members].filter(Boolean).reduce((sum, u) => sum + userStories(u.name).total, 0);
+
+        return (
+          <div key={team} className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+            {/* Team header / team lead row */}
+            <button className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
+              style={{ background: isOpen ? '#f0fdf4' : 'var(--surface)' }}
+              onClick={() => toggleLead(leadId)}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                style={{ background: '#059669' }}>
+                {(lead?.name || team)[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm">{lead?.name || '(No Team Lead)'}</div>
+                <div className="text-xs" style={{ color: 'var(--muted)' }}>
+                  {team} · Team Lead · {members.length} member{members.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold" style={{ color: '#059669' }}>
+                  {teamTotal} stories
+                </span>
+                {isOpen ? <ChevronUp size={16} style={{ color: 'var(--muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--muted)' }} />}
+              </div>
+            </button>
+
+            {/* Members table */}
+            {isOpen && (
+              <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs" style={{ minWidth: 700 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+                        <th className="text-left px-4 py-2 font-medium w-40" style={{ color: 'var(--muted)' }}>Editor</th>
+                        <th className="text-center px-2 py-2 font-medium w-12" style={{ color: 'var(--muted)' }}>Total</th>
+                        {HOURS.map(h => (
+                          <th key={h} className="text-center px-1 py-2 font-medium w-8" style={{ color: 'var(--muted)' }}>
+                            {String(h).padStart(2, '0')}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.map(member => {
+                        const stats   = userStories(member.name);
+                        const isSelMember = selectedUser === member.name;
+                        return (
+                          <tr key={member.id}
+                            className="border-b cursor-pointer transition-colors"
+                            style={{
+                              borderColor: 'var(--border)',
+                              background: isSelMember ? '#f0fdf4' : undefined,
+                            }}
+                            onClick={() => setSelectedUser(isSelMember ? null : member.name)}>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                                  style={{ background: isSelMember ? '#059669' : '#94a3b8' }}>
+                                  {member.name[0].toUpperCase()}
+                                </div>
+                                <span className="font-medium truncate" style={{ maxWidth: 110, color: isSelMember ? '#059669' : undefined }}>
+                                  {member.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="text-center px-2 py-2.5">
+                              <span className="font-bold text-sm" style={{ color: stats.total ? '#059669' : 'var(--muted)' }}>
+                                {stats.total || 0}
+                              </span>
+                            </td>
+                            {HOURS.map(h => {
+                              const n = stats.hours[h] || 0;
+                              return (
+                                <td key={h} className="text-center px-1 py-2.5">
+                                  <div className="w-6 h-6 rounded mx-auto flex items-center justify-center text-[10px] font-bold"
+                                    style={{
+                                      background: heatColor(n),
+                                      color: n >= 3 ? '#fff' : n ? '#15803d' : 'var(--muted)',
+                                      border: n ? 'none' : '1px solid var(--border)',
+                                    }}>
+                                    {n || ''}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                      {members.length === 0 && (
+                        <tr>
+                          <td colSpan={2 + HOURS.length} className="px-4 py-4 text-center"
+                            style={{ color: 'var(--muted)' }}>
+                            No individual members in this team
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
