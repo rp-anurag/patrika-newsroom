@@ -588,6 +588,7 @@ function DocTab({ docType }) {
   const [form,    setForm]    = useState({ label: '', circular_date: '' });
   const [file,    setFile]    = useState(null);
   const [progress, setProgress] = useState(0);
+  const [viewing,  setViewing]  = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -644,6 +645,7 @@ function DocTab({ docType }) {
   const color = isPdf ? '#d71920' : '#3b82f6';
 
   return (
+    <>
     <div className="mt-4 grid gap-4 lg:grid-cols-3">
       {/* Upload form */}
       <div className="card p-4">
@@ -751,6 +753,14 @@ function DocTab({ docType }) {
                     <td className="p-3 text-xs whitespace-nowrap" style={{ color: 'var(--muted)' }}>{fmtDocDate(doc.uploaded_at)}</td>
                     <td className="p-3">
                       <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => isPdf
+                            ? setViewing(doc)
+                            : window.open(`/uploads/archive-docs/${doc.filename}`, '_blank')}
+                          className="btn-ghost p-1.5 text-xs flex items-center gap-1"
+                          title="View">
+                          <Eye size={13} />
+                        </button>
                         <a
                           href={`/uploads/archive-docs/${doc.filename}`}
                           download={doc.original_name}
@@ -777,6 +787,38 @@ function DocTab({ docType }) {
         )}
       </div>
     </div>
+
+    {/* PDF viewer modal */}
+    {viewing && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60" onClick={() => setViewing(null)} />
+        <div className="relative z-10 flex flex-col w-full max-w-4xl" style={{ height: '90vh' }}>
+          <div className="card flex items-center justify-between px-4 py-3 rounded-b-none border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <File size={16} style={{ color, flexShrink: 0 }} />
+              <div className="font-semibold text-sm truncate">{viewing.label}</div>
+              <span className="text-xs ml-1 shrink-0" style={{ color: 'var(--muted)' }}>{fmtDocDate(viewing.circular_date)}</span>
+            </div>
+            <div className="flex items-center gap-2 ml-3 shrink-0">
+              <a href={`/uploads/archive-docs/${viewing.filename}`} download={viewing.original_name}
+                className="btn-ghost flex items-center gap-1.5 text-xs px-3 py-1.5">
+                <Download size={13} /> Download
+              </a>
+              <button onClick={() => setViewing(null)} className="btn-ghost p-1.5">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          <iframe
+            src={`/uploads/archive-docs/${viewing.filename}`}
+            className="flex-1 rounded-b-xl"
+            style={{ border: 'none', background: '#525659' }}
+            title={viewing.label}
+          />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
