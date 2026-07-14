@@ -4,7 +4,6 @@ import { useApp } from './context/AppContext.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import Editorial from './pages/Editorial.jsx';
 import Production from './pages/Production.jsx';
 import PageMonitoring from './pages/PageMonitoring.jsx';
 import Hr from './pages/Hr.jsx';
@@ -75,7 +74,6 @@ export default function App() {
         <Route path="/login"    element={user ? <Navigate to={roleHome(user)} replace /> : <Login />} />
         <Route path="/reporter" element={<FieldPortal />} />
         <Route path="/"          element={<Guard accessKey="home">       <Dashboard />     </Guard>} />
-        <Route path="/editorial" element={<Guard accessKey="editorial">  <Editorial />     </Guard>} />
         <Route path="/production"element={<Guard accessKey="production"> <Production />    </Guard>} />
         <Route path="/pages"     element={<Guard accessKey="pages">      <PageMonitoring /></Guard>} />
         <Route path="/field"     element={<Guard accessKey="field">      <Field />         </Guard>} />

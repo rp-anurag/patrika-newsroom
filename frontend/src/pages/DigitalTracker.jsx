@@ -13,7 +13,7 @@ import {
   ChevronDown, ChevronUp, Search, RefreshCw, FileSpreadsheet, Eye, EyeOff,
   Award, AlertCircle, CheckCircle, Newspaper, Clock, Globe, ExternalLink,
   CalendarDays, ArrowRight, Timer, LayoutList, Users2, Settings, BarChart3,
-  Radio, Activity,
+  Radio, Activity, SlidersHorizontal,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api } from '../api/client.js';
@@ -389,7 +389,11 @@ function PerformanceTab({ user, canAdmin }) {
   const isTeamLead = user?.digital_role === 'team_lead';
   const myTeam     = user?.team || '';
 
+  const TODAY_STR = new Date().toISOString().slice(0, 10);
+
   const [period,    setPeriod]    = useState('today');
+  const [fromDate,  setFromDate]  = useState(TODAY_STR);
+  const [toDate,    setToDate]    = useState(TODAY_STR);
   const [articles,  setArticles]  = useState([]);
   const [users,     setUsers]     = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -397,11 +401,14 @@ function PerformanceTab({ user, canAdmin }) {
   const [expanded,  setExpanded]  = useState({});
   const [sortKey,   setSortKey]   = useState('uv');
 
-  const load = useCallback(async (p) => {
+  const load = useCallback(async (p, fr, to) => {
     setLoading(true);
     try {
       const [cb, ul] = await Promise.all([
-        api.chartbeat(p),
+        // Use from/to for custom ranges; period for presets
+        (fr && to && (fr !== to || p === 'custom'))
+          ? api.chartbeat({ from: fr, to })
+          : api.chartbeat({ period: p }),
         api.digitalUsers(),
       ]);
       setArticles(cb.articles || []);
@@ -413,9 +420,21 @@ function PerformanceTab({ user, canAdmin }) {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(period); }, [load, period]);
+  useEffect(() => { load(period, fromDate, toDate); }, [load, period, fromDate, toDate]); // eslint-disable-line
 
-  const changePeriod = (p) => { setPeriod(p); setExpanded({}); };
+  const applyPeriod = (p) => {
+    const now  = new Date();
+    const to   = now.toISOString().slice(0, 10);
+    let from = to;
+    if (p === 'week')  { const s = new Date(now); s.setDate(s.getDate()-6);  from = s.toISOString().slice(0,10); }
+    if (p === 'month') { const s = new Date(now); s.setDate(s.getDate()-29); from = s.toISOString().slice(0,10); }
+    setPeriod(p);
+    setFromDate(from);
+    setToDate(to);
+    setExpanded({});
+  };
+
+  const changePeriod = (p) => applyPeriod(p);
 
   // Seed ALL users from settings with 0, then overlay Chartbeat data
   const authorStats = useMemo(() => {
@@ -494,15 +513,25 @@ function PerformanceTab({ user, canAdmin }) {
   return (
     <div className="space-y-4">
 
-      {/* Period tabs */}
-      <div className="flex items-center gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--border)' }}>
-        {PERIODS.map(p => (
-          <button key={p.key} onClick={() => changePeriod(p.key)}
-            className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
-            style={{ background: period === p.key ? '#0891b2' : 'transparent', color: period === p.key ? '#fff' : 'var(--muted)' }}>
-            {p.label}
-          </button>
-        ))}
+      {/* Period shortcuts + custom date range */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--border)' }}>
+          {PERIODS.map(p => (
+            <button key={p.key} onClick={() => changePeriod(p.key)}
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
+              style={{ background: period === p.key ? '#0891b2' : 'transparent', color: period === p.key ? '#fff' : 'var(--muted)' }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <CalendarDays size={14} style={{ color: 'var(--muted)' }} />
+          <input type="date" className="input py-1 text-sm" value={fromDate} max={toDate}
+            onChange={e => { setFromDate(e.target.value); setPeriod('custom'); }} />
+          <span className="text-xs" style={{ color: 'var(--muted)' }}>to</span>
+          <input type="date" className="input py-1 text-sm" value={toDate} min={fromDate} max={TODAY_STR}
+            onChange={e => { setToDate(e.target.value); setPeriod('custom'); }} />
+        </div>
       </div>
 
       {loading ? (
@@ -981,6 +1010,11 @@ function EditRow({ user, onSave, onCancel }) {
 
 // ── Patrika Stories Tab ───────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().slice(0, 10);
+const STORY_PERIODS = [
+  { key: 'today', label: 'Today' },
+  { key: 'week',  label: 'Last 7 Days' },
+  { key: 'month', label: 'Last 30 Days' },
+];
 
 const PATRIKA_CATEGORIES = [
   { value: 'all',             label: 'All Categories' },
@@ -998,26 +1032,126 @@ const PATRIKA_CATEGORIES = [
 // Categories fetched when "All" is selected
 const ALL_FETCH_CATS = ['breaking-news', 'national', 'crime-news', 'sports-news', 'entertainment'];
 
+// Searchable combobox — type to filter options, click to select
+function SearchSelect({ value, onChange, options, placeholder = 'Search…', allLabel = 'All' }) {
+  const [text, setText]       = useState('');
+  const [open, setOpen]       = useState(false);
+  const ref                   = useRef(null);
+
+  // Derive display text from current value
+  const displayLabel = value === 'all' ? '' : (options.find(o => o.value === value)?.label ?? value);
+
+  const filtered = options.filter(o =>
+    o.label.toLowerCase().includes(text.toLowerCase()) ||
+    (o.value !== 'all' && o.value.toLowerCase().includes(text.toLowerCase()))
+  );
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const select = (val) => {
+    onChange(val);
+    setText('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', minWidth: 180 }}>
+      <div className="input flex items-center gap-1.5 py-1.5 cursor-text"
+        style={{ paddingRight: 28 }}
+        onClick={() => setOpen(true)}>
+        {!open && value !== 'all'
+          ? <span className="text-sm truncate flex-1">{displayLabel}</span>
+          : <input
+              autoFocus={open}
+              className="flex-1 bg-transparent outline-none text-sm"
+              placeholder={open ? placeholder : (value === 'all' ? allLabel : displayLabel)}
+              value={text}
+              onChange={e => { setText(e.target.value); setOpen(true); }}
+              onFocus={() => setOpen(true)}
+            />
+        }
+        {value !== 'all' && (
+          <button onMouseDown={e => { e.stopPropagation(); select('all'); }}
+            style={{ color: 'var(--muted)', flexShrink: 0 }}>
+            <X size={12} />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="card" style={{
+          position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 200,
+          maxHeight: 220, overflowY: 'auto', padding: '4px 0',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+        }}>
+          <div onMouseDown={() => select('all')}
+            className="px-3 py-1.5 text-sm cursor-pointer"
+            style={{ color: value === 'all' ? '#0891b2' : 'var(--muted)', fontWeight: value === 'all' ? 600 : 400 }}>
+            {allLabel}
+          </div>
+          {filtered.filter(o => o.value !== 'all').map(o => (
+            <div key={o.value} onMouseDown={() => select(o.value)}
+              className="px-3 py-1.5 text-sm cursor-pointer"
+              style={{ background: value === o.value ? '#e0f2fe' : 'transparent', color: value === o.value ? '#0891b2' : 'inherit', fontWeight: value === o.value ? 600 : 400 }}>
+              {o.label}
+            </div>
+          ))}
+          {filtered.filter(o => o.value !== 'all').length === 0 && (
+            <div className="px-3 py-2 text-xs" style={{ color: 'var(--muted)' }}>No matches</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PatrikaStoriesTab({ user, canAdmin }) {
-  const [date, setDate]         = useState(TODAY);
-  const [category, setCategory] = useState('all');
-  const [liveArts, setLiveArts] = useState([]);
-  const [saved, setSaved]       = useState([]);
-  const [fetching, setFetching] = useState(false);
+  const [period,       setPeriod]       = useState('today');
+  const [fromDate,     setFromDate]     = useState(TODAY);
+  const [toDate,       setToDate]       = useState(TODAY);
+  const [category,     setCategory]     = useState('all');
+  const [editorFilter, setEditorFilter] = useState('all');
+  const [liveArts,     setLiveArts]     = useState([]);
+  const [saved,        setSaved]        = useState([]);
+  const [fetching,     setFetching]     = useState(false);
   const [loadingSaved, setLoadingSaved] = useState(false);
-  const [err, setErr]           = useState('');
-  const [savedIds, setSavedIds] = useState(new Set());
-  const [drafts, setDrafts]     = useState({});
-  // Author map: url → author name (fetched in background)
-  const [authorMap, setAuthorMap]         = useState({});
+  const [err,          setErr]          = useState('');
+  const [savedIds,     setSavedIds]     = useState(new Set());
+  const [drafts,       setDrafts]       = useState({});
+  const [authorMap,    setAuthorMap]    = useState({});
   const [authorsLoading, setAuthorsLoading] = useState(false);
+  const [showFilters,  setShowFilters]  = useState(false);
+
+  // Keep a single `date` alias for today-mode (used by live scrape & save form)
+  const date = period === 'today' ? fromDate : toDate;
+
   const setDraft = (i, k, v) =>
     setDrafts(prev => ({ ...prev, [i]: { ...(prev[i] || {}), [k]: v } }));
 
-  const loadSaved = async (d) => {
+  // Apply period shortcut → set from/to
+  const applyPeriod = (p) => {
+    const now = new Date();
+    const to  = TODAY;
+    let from = to;
+    if (p === 'week')  { const s = new Date(now); s.setDate(s.getDate()-6);  from = s.toISOString().slice(0,10); }
+    if (p === 'month') { const s = new Date(now); s.setDate(s.getDate()-29); from = s.toISOString().slice(0,10); }
+    setPeriod(p);
+    setFromDate(from);
+    setToDate(to);
+    setEditorFilter('all');
+  };
+
+  const loadSaved = async (fr, to) => {
     setLoadingSaved(true);
+    const f = fr ?? fromDate;
+    const t = to ?? toDate;
     try {
-      const res = await api.breakingNews({ date: d || date });
+      const params = f === t ? { date: f } : { from: f, to: t };
+      const res = await api.breakingNews(params);
       setSaved(res.entries || []);
     } catch (_) {}
     finally { setLoadingSaved(false); }
@@ -1040,38 +1174,32 @@ function PatrikaStoriesTab({ user, canAdmin }) {
     finally { setAuthorsLoading(false); }
   };
 
-  const fetchLive = async (d, cat) => {
+  const fetchLive = async () => {
+    // Sitemap only has today's articles — skip if today is not in the range
+    if (toDate !== TODAY) {
+      setLiveArts([]); setAuthorMap({}); setAuthorsLoading(false);
+      return;
+    }
     setFetching(true); setErr(''); setLiveArts([]); setDrafts({}); setSavedIds(new Set());
     setAuthorMap({}); setAuthorsLoading(false);
-    const target = d   || date;
-    const useCat = cat || category;
     try {
-      if (useCat === 'all') {
-        // Use Google News sitemap — returns ALL articles for the date
-        const res  = await api.fetchPatrikaByDate(target);
-        const arts = res.articles || [];
-        setLiveArts(arts);
-        if (!arts.length) setErr(`No articles found in sitemap for ${target}.`);
-        else fetchAuthors(arts); // background — no await
-      } else {
-        // Specific category page (up to 10 recent articles)
-        const res  = await api.fetchPatrikaArticles(useCat);
-        const arts = (res.articles || []).filter(
-          a => !a.publish_date || a.publish_date.startsWith(target)
-        );
-        setLiveArts(arts);
-        if (!arts.length) setErr(`No articles found for ${target} in this category.`);
-        else fetchAuthors(arts); // background — no await
-      }
+      // Always fetch today's articles; category is filtered client-side
+      const res  = await api.fetchPatrikaByDate(TODAY);
+      const arts = res.articles || [];
+      setLiveArts(arts);
+      if (!arts.length) setErr(`No articles found in sitemap for ${TODAY}.`);
+      else fetchAuthors(arts);
     } catch (e) { setErr('Fetch: ' + e.message); }
     finally { setFetching(false); }
   };
 
-  // Auto-load both when date or category changes
+  // Auto-load when date range changes (category is now client-side only)
   useEffect(() => {
-    loadSaved(date);
-    fetchLive(date, category);
-  }, [date, category]); // eslint-disable-line
+    setEditorFilter('all');
+    setCategory('all');
+    loadSaved(fromDate, toDate);
+    fetchLive();
+  }, [fromDate, toDate]); // eslint-disable-line
 
   const saveRow = async (art, i) => {
     const d = drafts[i] || {};
@@ -1118,6 +1246,27 @@ function PatrikaStoriesTab({ user, canAdmin }) {
     })),
   ];
 
+  // Editor names for dropdown
+  const editorNames = useMemo(() => {
+    const names = [...new Set(allStories.map(s => s.name).filter(Boolean))].sort();
+    return names;
+  }, [allStories]);
+
+  // Apply category + editor filters (both client-side)
+  const filteredStories = useMemo(() => {
+    return allStories.filter(s => {
+      if (editorFilter !== 'all' && s.name !== editorFilter) return false;
+      if (category !== 'all') {
+        if (!s.url) return true; // no URL — can't determine category, include
+        try {
+          const seg = new URL(s.url).pathname.split('/').filter(Boolean)[0] || '';
+          if (seg && seg !== category) return false;
+        } catch { /* malformed URL — include */ }
+      }
+      return true;
+    });
+  }, [allStories, editorFilter, category]);
+
   const authorsDone  = Object.keys(authorMap).length;
   const authorsTotal = liveArts.length;
 
@@ -1126,21 +1275,37 @@ function PatrikaStoriesTab({ user, canAdmin }) {
 
       {/* ── Controls ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Date range */}
         <div className="flex items-center gap-1.5">
           <CalendarDays size={14} style={{ color: 'var(--muted)' }} />
-          <input type="date" className="input py-1.5 text-sm" value={date} max={TODAY}
-            onChange={e => setDate(e.target.value)} />
+          <input type="date" className="input py-1.5 text-sm" value={fromDate} max={toDate}
+            onChange={e => setFromDate(e.target.value)} />
+          <span className="text-xs" style={{ color: 'var(--muted)' }}>to</span>
+          <input type="date" className="input py-1.5 text-sm" value={toDate} min={fromDate} max={TODAY}
+            onChange={e => setToDate(e.target.value)} />
         </div>
-        <select className="input py-1.5 text-sm" style={{ maxWidth: 170 }}
-          value={category} onChange={e => setCategory(e.target.value)}>
-          {PATRIKA_CATEGORIES.map(c => (
-            <option key={c.value} value={c.value}>{c.label}</option>
-          ))}
-        </select>
 
+        {/* Filter button */}
+        <button
+          onClick={() => setShowFilters(f => !f)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: (category !== 'all' || editorFilter !== 'all') ? '#0891b2' : 'var(--border)',
+            color:      (category !== 'all' || editorFilter !== 'all') ? '#fff' : 'var(--muted)',
+          }}>
+          <SlidersHorizontal size={14} />
+          Filter
+          {(category !== 'all' || editorFilter !== 'all') && (
+            <span className="ml-0.5 text-xs font-bold">
+              ({[category !== 'all' ? 1 : 0, editorFilter !== 'all' ? 1 : 0].reduce((a,b)=>a+b,0)})
+            </span>
+          )}
+        </button>
+
+        {/* Status */}
         {isLoading && (
           <span className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-            <RefreshCw size={12} className="animate-spin" /> Loading stories…
+            <RefreshCw size={12} className="animate-spin" /> Loading…
           </span>
         )}
         {!isLoading && authorsLoading && (
@@ -1156,11 +1321,38 @@ function PatrikaStoriesTab({ user, canAdmin }) {
           </span>
         )}
         <button className="btn-ghost px-2.5 py-1.5 ml-auto"
-          onClick={() => { loadSaved(date); fetchLive(date, category); }}
+          onClick={() => { loadSaved(fromDate, toDate); fetchLive(); }}
           title="Refresh">
           <RefreshCw size={14} />
         </button>
       </div>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-lg" style={{ background: 'var(--border)' }}>
+          <span className="text-xs font-semibold" style={{ color: 'var(--muted)' }}>Filters:</span>
+          <SearchSelect
+            value={category}
+            onChange={setCategory}
+            options={PATRIKA_CATEGORIES}
+            placeholder="Search category…"
+            allLabel="All Categories"
+          />
+          <SearchSelect
+            value={editorFilter}
+            onChange={setEditorFilter}
+            options={[{ value: 'all', label: 'All Editors' }, ...editorNames.map(n => ({ value: n, label: n }))]}
+            placeholder="Search editor…"
+            allLabel="All Editors"
+          />
+          {(category !== 'all' || editorFilter !== 'all') && (
+            <button className="text-xs px-2 py-1 rounded" style={{ color: '#dc2626', background: '#fee2e2' }}
+              onClick={() => { setCategory('all'); setEditorFilter('all'); }}>
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {err && (
         <div className="text-sm px-3 py-2 rounded-lg" style={{ color: '#92400e', background: '#fef3c7' }}>
@@ -1169,8 +1361,7 @@ function PatrikaStoriesTab({ user, canAdmin }) {
       )}
 
       <StoriesDashboard
-        allStories={allStories}
-        liveArts={liveArts}
+        allStories={filteredStories}
         date={date}
         loading={isLoading}
         authorsLoading={authorsLoading}
@@ -1304,13 +1495,25 @@ function SectionHeader({ icon: Icon, color, title, meta, right }) {
   );
 }
 
-function StoriesDashboard({ allStories, liveArts, date, loading,
+function StoriesDashboard({ allStories, date, loading,
   authorsLoading, authorsDone, authorsTotal, authorMap = {} }) {
 
   const [selectedEditor,   setSelectedEditor]   = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showCatHeat,      setShowCatHeat]      = useState(false);
   const [showEdHeat,       setShowEdHeat]       = useState(false);
+
+  // Normalise category: prefer s.category (already server-extracted), else derive from URL
+  const getCat = (s) => {
+    if (s.category) return s.category;
+    if (s.url) {
+      try {
+        const seg = new URL(s.url).pathname.split('/').filter(Boolean)[0] || '';
+        return seg.replace(/-news$/, '').replace(/-/g, ' ') || 'other';
+      } catch { }
+    }
+    return 'other';
+  };
 
   if (loading && !allStories.length)
     return <div className="text-center py-12" style={{ color: 'var(--muted)' }}>Loading stories from Patrika.com…</div>;
@@ -1326,9 +1529,9 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
 
   // ── Hourly totals ────────────────────────────────────────────────────────
   const hourTotals = {};
-  liveArts.forEach(a => {
-    if (!a.publish_time) return;
-    const hr = parseInt(a.publish_time.split(':')[0], 10);
+  allStories.forEach(s => {
+    if (!s.time) return;
+    const hr = parseInt(s.time.split(':')[0], 10);
     if (!isNaN(hr)) hourTotals[hr] = (hourTotals[hr] || 0) + 1;
   });
   const activeHours  = Object.keys(hourTotals).map(Number).sort((a, b) => a - b);
@@ -1338,12 +1541,12 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
 
   // ── Category breakdown ────────────────────────────────────────────────────
   const byCat = {};
-  liveArts.forEach(a => {
-    const cat = a.category || 'other';
+  allStories.forEach(s => {
+    const cat = getCat(s);
     if (!byCat[cat]) byCat[cat] = { cat, total: 0, hourCounts: {} };
     byCat[cat].total++;
-    if (a.publish_time) {
-      const hr = parseInt(a.publish_time.split(':')[0], 10);
+    if (s.time) {
+      const hr = parseInt(s.time.split(':')[0], 10);
       if (!isNaN(hr)) byCat[cat].hourCounts[hr] = (byCat[cat].hourCounts[hr] || 0) + 1;
     }
   });
@@ -1376,7 +1579,7 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
       {/* ── 4 KPI cards ──────────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard icon={Newspaper} label="Total Stories"
-          value={liveArts.length} sub={`Published ${date}`} color="#2563eb" />
+          value={allStories.length} sub={`Published ${date}`} color="#2563eb" />
         <SummaryCard icon={Globe} label="Categories Active"
           value={catRows.length} sub={`Peak: ${peakHr !== undefined ? String(peakHr).padStart(2,'0')+':00' : '—'}`} color="#7c3aed" />
         <SummaryCard icon={Clock}
@@ -1397,7 +1600,7 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
         <SectionHeader
           icon={Globe} color="#7c3aed"
           title="Category Activity"
-          meta={`${catRows.length} categories · ${liveArts.length} stories`}
+          meta={`${catRows.length} categories · ${allStories.length} stories`}
           right={`${date}`}
         />
 
@@ -1420,9 +1623,9 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
         {/* Category stories panel */}
         {selectedCategory && (() => {
           const catColor = CAT_PALETTE[catRows.findIndex(c => c.cat === selectedCategory) % CAT_PALETTE.length];
-          const catStories = liveArts
-            .filter(a => (a.category || 'other') === selectedCategory)
-            .sort((a, b) => (a.publish_time || '').localeCompare(b.publish_time || ''));
+          const catStories = allStories
+            .filter(s => getCat(s) === selectedCategory)
+            .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
           return (
             <div className="rounded-xl border overflow-hidden"
               style={{ borderColor: `${catColor}40`, background: 'var(--surface)' }}>
@@ -1449,7 +1652,7 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
                   <div key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-black/[0.02] transition-colors">
                     <span className="text-xs font-mono mt-0.5 flex-shrink-0 tabular-nums"
                       style={{ color: 'var(--muted)', minWidth: 40 }}>
-                      {s.publish_time || '—'}
+                      {s.time || '—'}
                     </span>
                     <div className="flex-1 min-w-0">
                       {s.url
@@ -1458,10 +1661,10 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
                             style={{ color: 'var(--text)' }}>{s.title}</a>
                         : <p className="text-sm font-medium leading-snug line-clamp-2">{s.title}</p>
                       }
-                      {(authorMap[s.url] || s.author) && (
+                      {s.name && (
                         <span className="text-xs mt-0.5 inline-flex items-center gap-1" style={{ color: '#16a34a' }}>
                           <Users2 size={10} />
-                          {authorMap[s.url] || s.author}
+                          {s.name}
                         </span>
                       )}
                     </div>
@@ -1518,7 +1721,7 @@ function StoriesDashboard({ allStories, liveArts, date, loading,
                             <HeatCell count={hourTotals[h] || 0} max={maxHourTotal} />
                           </td>
                         ))}
-                        <td className="pb-2 pl-4 text-right font-bold" style={{ color: '#7c3aed' }}>{liveArts.length}</td>
+                        <td className="pb-2 pl-4 text-right font-bold" style={{ color: '#7c3aed' }}>{allStories.length}</td>
                       </tr>
                     </thead>
                     <tbody>

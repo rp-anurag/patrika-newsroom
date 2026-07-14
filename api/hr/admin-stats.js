@@ -41,11 +41,23 @@ module.exports = async (req, res) => {
   const { authError } = requireRole(req, ['Admin', 'HR', 'Management', 'State Head', 'Regional Editor']);
   if (authError) return res.status(authError.status).json({ error: authError.message });
 
+  // Optional global filters ('All' / empty = no filter)
+  const fState  = (req.query.state  && req.query.state  !== 'All') ? req.query.state  : '';
+  const fBranch = (req.query.branch && req.query.branch !== 'All') ? req.query.branch : '';
+
   try {
+    const where  = [];
+    const params = [];
+    if (fState)  { where.push('State = ?');  params.push(fState);  }
+    if (fBranch) { where.push('Branch = ?'); params.push(fBranch); }
+
     const emps = await query(
-      `SELECT EMP_CODE, EMPNAME, emp_designation, Story_Type, emp_deptt, Branch, State,
+      `SELECT EMP_CODE, EMPNAME, emp_designation, Story_Type, profile, emp_deptt, Branch, State,
               DOB, DOJ, gross_salary, is_emp_working, Status, pan_no
-       FROM \`${TABLE}\` ORDER BY EMPNAME ASC`
+       FROM \`${TABLE}\`
+       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+       ORDER BY EMPNAME ASC`,
+      params
     );
 
     const today   = new Date();
@@ -80,35 +92,53 @@ module.exports = async (req, res) => {
       else             ageDist['60+']++;
     });
 
-    // Profile-wise count from Story_Type (active members only)
+    // Profile-wise count from Story_Type (active members only).
+    // NE is a catch-all — those employees' real role lives in user.profile instead.
     const profileMap = {};
     working.forEach(e => {
-      const p = (e.Story_Type || '').trim() || 'Unknown';
+      const st = (e.Story_Type || '').trim();
+      const p  = (st === 'NE' ? (e.profile || '').trim() || 'NE' : st) || 'Unknown';
       if (!profileMap[p]) profileMap[p] = { profile: p, available: 0, totalSalary: 0 };
       profileMap[p].available++;
       profileMap[p].totalSalary += Number(e.gross_salary || 0);
     });
 
-    // Fetch sanctioned posts from MySQL
+    // Fetch sanctioned posts scoped to the same filters.
+    // Rows are stored per (profile, state, branch); '' = company-wide row.
     let sanctioned = [];
     try {
-      sanctioned = await query('SELECT * FROM hr_sanctioned_posts');
+      const sWhere  = [];
+      const sParams = [];
+      if (fBranch)      { sWhere.push('branch = ?'); sParams.push(fBranch); }
+      else if (fState)  { sWhere.push('state = ?');  sParams.push(fState);  }
+      sanctioned = await query(
+        `SELECT * FROM hr_sanctioned_posts ${sWhere.length ? 'WHERE ' + sWhere.join(' AND ') : ''}`,
+        sParams
+      );
     } catch (_) { /* table may not exist yet */ }
 
+    // Sum sanctioned counts per profile across all rows in scope
+    const sancByProfile = {};
+    sanctioned.forEach(s => {
+      const key = s.profile;
+      if (!sancByProfile[key]) sancByProfile[key] = 0;
+      sancByProfile[key] += Number(s.sanctioned_count) || 0;
+    });
+
     const profiles = Object.values(profileMap).map(p => {
-      const s = sanctioned.find(sp => sp.profile === p.profile);
+      const sc = sancByProfile[p.profile];
       return {
         ...p,
         avgSalary:      p.available ? Math.round(p.totalSalary / p.available) : 0,
-        sanctionedCount: s ? s.sanctioned_count : null,
-        vacant:          s ? Math.max(0, s.sanctioned_count - p.available) : null,
+        sanctionedCount: sc !== undefined ? sc : null,
+        vacant:          sc !== undefined ? Math.max(0, sc - p.available) : null,
       };
     }).sort((a, b) => b.available - a.available);
 
-    // Sanctioned-only profiles with 0 available
-    sanctioned.forEach(s => {
-      if (!profiles.find(p => p.profile === s.profile)) {
-        profiles.push({ profile: s.profile, available: 0, avgSalary: s.min_salary || 0, totalSalary: 0, sanctionedCount: s.sanctioned_count, vacant: s.sanctioned_count });
+    // Sanctioned-only profiles with 0 available in this scope
+    Object.entries(sancByProfile).forEach(([profile, sc]) => {
+      if (!profiles.find(p => p.profile === profile)) {
+        profiles.push({ profile, available: 0, avgSalary: 0, totalSalary: 0, sanctionedCount: sc, vacant: sc });
       }
     });
 

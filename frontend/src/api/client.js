@@ -44,7 +44,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
-    if (data.token) localStorage.setItem('pk_token', data.token);
+    if (data.token) {
+      localStorage.setItem('pk_token', data.token);
+      // Kept for SSO into editorialreview.patrika.com (same PAN+password); cleared on logout.
+      try { localStorage.setItem('pk_sso_cred', btoa(unescape(encodeURIComponent(JSON.stringify({ u: username, p: password }))))); } catch {}
+    }
     return data.user;
   },
 
@@ -168,7 +172,10 @@ export const api = {
   updateBreakingNews: (id, data) => request(`/digital/breaking-news?id=${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteBreakingNews: (id)       => request(`/digital/breaking-news?id=${id}`, { method: 'DELETE' }),
 
-  chartbeat: (period = 'today') => request(`/digital/chartbeat?period=${period}`),
+  chartbeat: ({ period, from, to } = {}) => {
+    if (from && to) return request(`/digital/chartbeat?from=${from}&to=${to}`);
+    return request(`/digital/chartbeat?period=${period || 'today'}`);
+  },
 
   uploadDigitalTargets: async (file) => {
     const token = localStorage.getItem('pk_token');
@@ -242,10 +249,11 @@ export const api = {
 
   // ── PLI & Grading ───────────────────────────────────────────────────────────
   hrGrading:         (month)     => withFallback(`/hr/grading?month=${month}`, []),
+  hrGradingAuto:     (month)     => withFallback(`/hr/grading-auto?month=${month}`, { scores: {} }),
   saveGrading:       (data)      => request('/hr/grading', { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Admin Stats ─────────────────────────────────────────────────────────────
-  hrAdminStats:      ()          => withFallback('/hr/admin-stats', null),
+  hrAdminStats:      (state, branch) => withFallback(`/hr/admin-stats?state=${encodeURIComponent(state || 'All')}&branch=${encodeURIComponent(branch || 'All')}`, null),
   hrSanctionedPosts: ()          => withFallback('/hr/sanctioned-posts', []),
   saveSanctionedPost:(data)      => request('/hr/sanctioned-posts', { method: 'POST', body: JSON.stringify(data) }),
 

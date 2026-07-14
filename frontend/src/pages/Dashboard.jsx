@@ -13,10 +13,77 @@ import { KPICard, SectionCard, PageHeader } from '../components/UI.jsx';
 
 const PIE_COLORS = ['#d71920', '#C9A227', '#8c0a0e', '#e8843a', '#3b82f6', '#16a34a', '#7c3aed', '#0891b2'];
 
+const TICKER_STYLE = `
+@keyframes wire-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.wire-track {
+  display: flex;
+  width: max-content;
+  animation: wire-scroll linear infinite;
+}
+.wire-track:hover { animation-play-state: paused; }
+`;
+
+function WireTicker({ feeds }) {
+  const allArticles = feeds.flatMap(f =>
+    (f.articles || []).map(a => ({ ...a, color: f.color, label: f.label }))
+  );
+  if (!allArticles.length) return null;
+  const items = [...allArticles, ...allArticles];
+  const duration = Math.max(60, allArticles.length * 3);
+  return (
+    <div className="card overflow-hidden mb-4" style={{ borderLeft: '4px solid #d71920' }}>
+      <style>{TICKER_STYLE}</style>
+      <div className="flex items-center">
+        <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-bold whitespace-nowrap"
+          style={{ background: '#d71920', color: '#fff', minWidth: 90 }}>
+          <Newspaper size={12} />
+          LIVE NEWS
+        </div>
+        <div className="flex-1 overflow-hidden relative" style={{ height: 40 }}>
+          <div
+            className="wire-track absolute top-0 left-0 h-full items-center"
+            style={{ animationDuration: `${duration}s` }}
+          >
+            {items.map((art, i) => (
+              <a
+                key={i}
+                href={art.link || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 text-sm font-medium whitespace-nowrap hover:underline"
+                style={{ color: 'var(--text)', height: 40 }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: art.color }} />
+                <span className="text-xs font-bold mr-1" style={{ color: art.color, opacity: 0.8 }}>{art.label}</span>
+                {art.title}
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { t, state, branch } = useApp();
   const [d, setD]           = useState(null);
   const [topDelay, setTopDelay] = useState([]);
+  const [feeds, setFeeds]   = useState([]);
+  const [profiles, setProfiles] = useState([]);
+
+  useEffect(() => {
+    api.editorialFeeds().then(d => setFeeds(d.feeds || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.hrAdminStats(state, branch)
+      .then(r => setProfiles(r?.profiles || []))
+      .catch(() => setProfiles([]));
+  }, [state, branch]);
 
   useEffect(() => {
     setD(null);
@@ -58,6 +125,7 @@ export default function Dashboard() {
 
   return (
     <div>
+      <WireTicker feeds={feeds} />
       <PageHeader title={t('nav.home')} subtitle={subtitle} />
 
       {/* ── KPI Grid ─────────────────────────────────────────────────────────── */}
@@ -265,6 +333,46 @@ export default function Dashboard() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* ── Profile-wise: Sanctioned vs Available ───────────────────────────── */}
+      <div className="mt-4">
+        <SectionCard title="Profile-wise: Sanctioned vs Available (Active Members)">
+          {profiles.length === 0 ? (
+            <EmptyState msg="No profile data available" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+                    <th className="pb-2 pr-4 font-medium">Profile (Story Type)</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Available</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Sanctioned</th>
+                    <th className="pb-2 font-medium text-right">Vacant</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                  {profiles.map(p => (
+                    <tr key={p.profile}>
+                      <td className="py-2 pr-4 font-semibold">{p.profile}</td>
+                      <td className="py-2 pr-4 text-right">{p.available}</td>
+                      <td className="py-2 pr-4 text-right">
+                        {p.sanctionedCount != null ? p.sanctionedCount : <span style={{ color: 'var(--muted)' }}>Not set</span>}
+                      </td>
+                      <td className="py-2 text-right">
+                        {p.vacant != null ? (
+                          <span style={{ color: p.vacant > 0 ? '#d71920' : '#10b981', fontWeight: 600 }}>
+                            {p.vacant > 0 ? p.vacant : 'Full'}
+                          </span>
+                        ) : <span style={{ color: 'var(--muted)' }}>-</span>}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

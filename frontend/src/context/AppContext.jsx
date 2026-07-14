@@ -17,8 +17,8 @@ export const STATES         = ['All'];
 // ── Nav access per role ────────────────────────────────────────────────────────
 const ACCESS = {
   'Admin':           'all',
-  'State Head':      ['home', 'editorial', 'production', 'pages', 'field', 'hr', 'alerts', 'reports', 'tasks', 'correspondent', 'settings', 'feedback'],
-  'Regional Editor': ['home', 'editorial', 'production', 'pages', 'field', 'hr', 'alerts', 'reports', 'tasks', 'correspondent', 'settings', 'feedback'],
+  'State Head':      ['home', 'production', 'pages', 'field', 'hr', 'alerts', 'reports', 'tasks', 'correspondent', 'settings', 'feedback'],
+  'Regional Editor': ['home', 'production', 'pages', 'field', 'hr', 'alerts', 'reports', 'tasks', 'correspondent', 'settings', 'feedback'],
   'Legal':           ['legal', 'settings'],
   // Digital team: access only their own tracker tab
   'Digital User':    ['digital_tracker'],
@@ -74,6 +74,7 @@ export function AppProvider({ children }) {
     setUser(null);
     localStorage.removeItem('pk_user');
     localStorage.removeItem('pk_token');
+    localStorage.removeItem('pk_sso_cred');
     _setState('All');
     _setBranch('All');
     setLocations({ states: [], branchesByState: {} });

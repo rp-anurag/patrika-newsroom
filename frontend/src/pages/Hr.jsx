@@ -1100,6 +1100,7 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
   const [month,       setMonth]       = useState(currentMonth());
   const [gradings,    setGradings]    = useState([]);
   const [localGrades, setLocalGrades] = useState({});
+  const [autoScores,  setAutoScores]  = useState({});
   const [loading,     setLoading]     = useState(false);
   const [savingId,    setSavingId]    = useState(null);
 
@@ -1113,12 +1114,15 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    api.hrGrading(month).then(d => {
-      setGradings(d || []);
-      const init = {};
-      (d || []).forEach(g => { init[g.pan] = g; });
-      setLocalGrades(init);
-    }).finally(() => setLoading(false));
+    Promise.all([
+      api.hrGrading(month).then(d => {
+        setGradings(d || []);
+        const init = {};
+        (d || []).forEach(g => { init[g.pan] = g; });
+        setLocalGrades(init);
+      }),
+      api.hrGradingAuto(month).then(d => setAutoScores(d?.scores || {})).catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, [month]);
 
   useEffect(() => { load(); }, [load]);
@@ -1140,7 +1144,19 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
     }
     setSavingId(pan);
     try {
-      const overall_pct = calcOverallPct(grades);
+      // Combined overall: manual /20 + auto /25 = /45
+      const merged = { ...getSaved(pan), ...grades };
+      const mVals = GRADE_CRITERIA
+        .map(c => merged[c.key])
+        .filter(v => v !== '' && v !== null && v !== undefined)
+        .map(Number).filter(v => !isNaN(v) && v >= 0 && v <= 5);
+      const mSum = mVals.length ? mVals.reduce((a, v) => a + v, 0) : null;
+      const auto = autoScores[(pan || '').toUpperCase()];
+      const overall_pct =
+        mSum !== null && auto ? Math.round(((mSum + auto.total) / 45) * 100)
+        : auto                ? auto.overall_pct
+        : mSum !== null       ? Math.round((mSum / 20) * 100)
+        : null;
       const saved = await api.saveGrading({
         pan, emp_code: emp.EMP_CODE, emp_name: emp.EMPNAME, month,
         pli_percent: emp.emp_pli,
@@ -1165,6 +1181,7 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
       const pan = e.pan_no || e.PAN || '';
       const g   = getSaved(pan) || {};
       const lg  = localGrades[pan] || {};
+      const a   = autoScores[(pan || '').toUpperCase()] || {};
       return {
         'PAN': pan, 'Name': e.EMPNAME,
         'Story Type': e.Story_Type || '',
@@ -1173,7 +1190,19 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
         'Behaviour (0-5)':  lg.behaviour_grade  ?? g.behaviour_grade  ?? '',
         'Discipline (0-5)': lg.discipline_grade ?? g.discipline_grade ?? '',
         'Interest (0-5)':   lg.interest_grade   ?? g.interest_grade   ?? '',
-        'Overall %':        g.overall_grade ? `${g.overall_grade}%` : (calcOverallPct({ ...g, ...lg }) !== null ? `${calcOverallPct({ ...g, ...lg })}%` : ''),
+        'Auto Marks (/25)': a.total ?? '',
+        'Overall %':        (() => {
+          const merged = { ...g, ...lg };
+          const mVals = ['work_grade', 'behaviour_grade', 'discipline_grade', 'interest_grade']
+            .map(k => merged[k])
+            .filter(v => v !== '' && v !== null && v !== undefined)
+            .map(Number).filter(v => !isNaN(v) && v >= 0 && v <= 5);
+          const mSum = mVals.length ? mVals.reduce((x, v) => x + v, 0) : null;
+          if (mSum !== null && a.total !== undefined) return `${Math.round(((mSum + a.total) / 45) * 100)}%`;
+          if (a.total !== undefined)                  return `${a.overall_pct}%`;
+          if (mSum !== null)                          return `${Math.round((mSum / 20) * 100)}%`;
+          return '';
+        })(),
       };
     });
     const ws = XLSX.utils.json_to_sheet(data);
@@ -1197,9 +1226,20 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
           </button>
         </div>
 
-        <p className="text-xs mb-3" style={{ color: 'var(--muted)' }}>
-          Score each employee 0-5 per criterion (5 = Excellent, 0 = Poor). Overall % = total scored / 20 x 100. PAN is the unique key.
+        <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>
+          Score each employee 0-5 per criterion (5 = Excellent, 0 = Poor). Overall % = (manual /20 + auto /25) / 45 x 100. PAN is the unique key.
         </p>
+        <details className="text-xs mb-3" style={{ color: 'var(--muted)' }}>
+          <summary className="cursor-pointer font-semibold">Auto Marks (/25) — how it is calculated</summary>
+          <p className="mt-1 ml-4">System combines 5 factors (5 marks each) from live data for the selected month; Auto % = total / 25 x 100. Hover the Auto column for each employee's breakdown.</p>
+          <ul className="mt-1 ml-4 list-disc space-y-0.5">
+            <li><b>Stories filed</b> (ECMS): 60+ = 5 · 45+ = 4 · 30+ = 3 · 15+ = 2 · 1+ = 1 · 0 = 0</li>
+            <li><b>Field visits</b>: 20+ = 5 · 15+ = 4 · 10+ = 3 · 5+ = 2 · 1+ = 1 · 0 = 0</li>
+            <li><b>QC mistakes</b> (responsible): 0 = 5 · up to 2 = 4 · up to 5 = 3 · up to 9 = 2 · up to 14 = 1 · 15+ = 0</li>
+            <li><b>Attendance</b> (HRMS present %): 95%+ = 5 · 90%+ = 4 · 85%+ = 3 · 75%+ = 2 · 60%+ = 1 · below = 0 · no data = 5</li>
+            <li><b>Page delay</b> (branch avg): up to 5 min = 5 · 15 = 4 · 30 = 3 · 60 = 2 · 90 = 1 · above = 0 · no editions = 5</li>
+          </ul>
+        </details>
 
         {loading ? (
           <div className="flex items-center justify-center py-8 gap-2" style={{ color: 'var(--muted)' }}>
@@ -1216,13 +1256,14 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
                   <th className="p-2">State</th>
                   <th className="p-2">Branch</th>
                   {GRADE_CRITERIA.map(c => <th key={c.key} className="p-2 text-center">{c.label}<span className="block text-[10px] font-normal opacity-60">0-5</span></th>)}
-                  <th className="p-2 text-center">Overall<span className="block text-[10px] font-normal opacity-60">%</span></th>
+                  <th className="p-2 text-center">Auto Marks<span className="block text-[10px] font-normal opacity-60">/25</span></th>
+                  <th className="p-2 text-center">Overall<span className="block text-[10px] font-normal opacity-60">% (manual+auto)</span></th>
                   {canEditHr() && <th className="p-2" />}
                 </tr>
               </thead>
               <tbody>
                 {displayEmps.length === 0 && (
-                  <tr><td colSpan={13} className="p-6 text-center" style={{ color: 'var(--muted)' }}>No employees match the current filters.</td></tr>
+                  <tr><td colSpan={14} className="p-6 text-center" style={{ color: 'var(--muted)' }}>No employees match the current filters.</td></tr>
                 )}
                 {displayEmps.map(e => {
                   const pan     = e.pan_no || e.PAN || '';
@@ -1230,13 +1271,27 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
                   const lg      = localGrades[pan] || {};
                   // overall: prefer live local calc, fallback to saved DB value
                   const mergedGrades = { ...saved, ...lg };
-                  const localPct  = calcOverallPct(mergedGrades);
-                  const overallPct = localPct !== null ? localPct : (saved?.overall_grade ? Number(saved.overall_grade) : null);
+                  // manual sum out of 20 (only counts filled criteria)
+                  const manualVals = GRADE_CRITERIA
+                    .map(c => mergedGrades[c.key])
+                    .filter(v => v !== '' && v !== null && v !== undefined)
+                    .map(Number).filter(v => !isNaN(v) && v >= 0 && v <= 5);
+                  const manualSum = manualVals.length ? manualVals.reduce((a, v) => a + v, 0) : null;
                   const isDirty = GRADE_CRITERIA.some(c => {
                     const cur = lg[c.key] !== undefined ? lg[c.key] : '';
                     const srv = saved?.[c.key] !== undefined ? String(saved[c.key]) : '';
                     return cur !== '' && String(cur) !== srv;
                   });
+                  const auto = autoScores[(pan || '').toUpperCase()];
+                  // Combined overall: manual /20 + auto /25 = /45. Falls back to whichever exists.
+                  const overallPct =
+                    manualSum !== null && auto ? Math.round(((manualSum + auto.total) / 45) * 100)
+                    : auto                     ? auto.overall_pct
+                    : manualSum !== null       ? Math.round((manualSum / 20) * 100)
+                    : null;
+                  const autoTip = auto
+                    ? `Stories: ${auto.stories} filed = ${auto.s_stories}/5\nVisits: ${auto.visits} = ${auto.s_visits}/5\nQC mistakes: ${auto.mistakes} = ${auto.s_qc}/5\nAttendance: ${auto.attend_pct ?? 'no data'}${auto.attend_pct !== null ? '%' : ''} = ${auto.s_attend}/5\nBranch delay: ${auto.delay_avg ?? 'no editions'}${auto.delay_avg !== null ? ' min avg' : ''} = ${auto.s_delay}/5`
+                    : '';
 
                   return (
                     <tr key={e.EMP_CODE} className="border-t hover:bg-black/5 dark:hover:bg-white/5 transition" style={{ borderColor: 'var(--border)' }}>
@@ -1272,6 +1327,12 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
                           </td>
                         );
                       })}
+                      <td className="p-2 text-center" title={autoTip}>
+                        {auto
+                          ? <span className="font-bold text-sm tabular-nums">{auto.total}/25</span>
+                          : <span className="text-xs" style={{ color: 'var(--muted)' }}>-</span>
+                        }
+                      </td>
                       <td className="p-2 text-center">
                         {overallPct !== null
                           ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold text-white"
@@ -1332,22 +1393,27 @@ function CorrespondentTab() {
 // ADMIN TAB
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function AdminTab({ emps, canEditHr }) {
+  const { state, branch } = useApp();
   const [stats,   setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [sanctionEdit, setSanctionEdit] = useState(null); // {profile, count}
   const [saving,  setSaving]  = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    api.hrAdminStats().then(setStats).finally(() => setLoading(false));
-  };
-  useEffect(() => { load(); }, []);
+    api.hrAdminStats(state, branch).then(setStats).finally(() => setLoading(false));
+  }, [state, branch]);
+  useEffect(() => { load(); }, [load]);
 
   const saveSanction = async () => {
     if (!sanctionEdit) return;
     setSaving(true);
     try {
-      await api.saveSanctionedPost({ profile: sanctionEdit.profile, sanctioned_count: Number(sanctionEdit.count) });
+      await api.saveSanctionedPost({
+        profile: sanctionEdit.profile,
+        sanctioned_count: Number(sanctionEdit.count),
+        state, branch,
+      });
       load();
       setSanctionEdit(null);
     } catch (e) { alert('Error: ' + e.message); }
@@ -1399,7 +1465,7 @@ function AdminTab({ emps, canEditHr }) {
               <div key={e.EMP_CODE} className="rounded-lg p-3" style={{ background: 'var(--bg)' }}>
                 <div className="text-sm font-semibold">{e.EMPNAME}</div>
                 <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                  {e.Story_Type || e.emp_designation} Â· {e.Branch} Â· Age {e.age} Â· Retires {e.retireOn}
+                  {e.Story_Type || e.emp_designation} | {e.Branch} | Age {e.age} | Retires {e.retireOn}
                 </div>
               </div>
             ))}
@@ -1438,7 +1504,8 @@ function AdminTab({ emps, canEditHr }) {
         }
       >
         <p className="text-xs mb-3" style={{ color: 'var(--muted)' }}>
-          Click the sanctioned count to update it. Vacant = Sanctioned âˆ’ Available.
+          Click the sanctioned count to update it. Vacant = Sanctioned - Available.
+          Figures follow the global State/Branch filter — set sanction posts branch-wise by selecting a branch first; the All view shows branch totals summed.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1463,7 +1530,7 @@ function AdminTab({ emps, canEditHr }) {
                         className="font-medium hover:opacity-70"
                         style={{ color: p.sanctionedCount != null ? 'inherit' : 'var(--muted)' }}
                       >
-                        {p.sanctionedCount != null ? p.sanctionedCount : 'Set â†’'}
+                        {p.sanctionedCount != null ? p.sanctionedCount : 'Set'}
                       </button>
                     ) : (
                       p.sanctionedCount ?? '-'
@@ -1472,7 +1539,7 @@ function AdminTab({ emps, canEditHr }) {
                   <td className="p-2 text-right">
                     {p.vacant != null ? (
                       <span style={{ color: p.vacant > 0 ? '#d71920' : '#10b981', fontWeight: 600 }}>
-                        {p.vacant > 0 ? p.vacant : 'âœ“ Full'}
+                        {p.vacant > 0 ? p.vacant : 'Full'}
                       </span>
                     ) : '-'}
                   </td>
@@ -1528,7 +1595,11 @@ function AdminTab({ emps, canEditHr }) {
               <h3 className="text-base font-bold">Sanctioned Count</h3>
               <button onClick={() => setSanctionEdit(null)} className="rounded-lg p-1 hover:bg-black/10"><X size={18} /></button>
             </div>
-            <p className="text-sm mb-3" style={{ color: 'var(--muted)' }}>{sanctionEdit.profile}</p>
+            <p className="text-sm mb-1" style={{ color: 'var(--muted)' }}>{sanctionEdit.profile}</p>
+            <p className="text-xs mb-3 font-medium" style={{ color: 'var(--brand)' }}>
+              Scope: {state !== 'All' ? state : 'All States'}{branch !== 'All' ? ` / ${branch}` : ' / All Branches'}
+              {(state === 'All' && branch === 'All') && ' (company-wide entry)'}
+            </p>
             <input
               className="input w-full" type="number" min={0}
               value={sanctionEdit.count}

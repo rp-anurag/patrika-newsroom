@@ -164,6 +164,7 @@ app.all('/api/auth/login',            h('./api/auth/login'));
 app.all('/api/auth/login-logs',       h('./api/auth/login-logs'));
 app.all('/api/auth/activity-logs',    h('./api/auth/activity-logs'));
 app.all('/api/auth/whoami',           h('./api/auth/whoami'));
+app.all('/api/auth/sso-verify',       h('./api/auth/sso-verify'));
 app.all('/api/auth/setup',            h('./api/auth/setup'));   // delete after first login
 
 // ── Users (Admin only) ────────────────────────────────────────────────────────
@@ -220,6 +221,7 @@ app.all('/api/hr/retirements',        h('./api/hr/retirements'));
 app.all('/api/hr/candidates/:id',     h('./api/hr/candidates/[id]'));
 app.all('/api/hr/candidates',         h('./api/hr/candidates'));
 app.all('/api/hr/training',           h('./api/hr/training'));
+app.all('/api/hr/grading-auto',       h('./api/hr/grading-auto'));
 app.all('/api/hr/grading',            h('./api/hr/grading'));
 app.all('/api/hr/sanctioned-posts',   h('./api/hr/sanctioned-posts'));
 app.all('/api/hr/admin-stats',        h('./api/hr/admin-stats'));

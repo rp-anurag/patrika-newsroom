@@ -31,7 +31,10 @@ module.exports = async (req, res) => {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     if (!body.profile) return res.status(422).json({ error: 'profile is required' });
 
-    const { profile, department, state, branch, sanctioned_count, min_salary, max_salary } = body;
+    const { profile, department, sanctioned_count, min_salary, max_salary } = body;
+    // Scope: '' = company-wide; unique key is (profile, state, branch)
+    const state  = (body.state  && body.state  !== 'All') ? body.state  : '';
+    const branch = (body.branch && body.branch !== 'All') ? body.branch : '';
 
     try {
       await query(
@@ -40,15 +43,16 @@ module.exports = async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            department      = VALUES(department),
-           state           = VALUES(state),
-           branch          = VALUES(branch),
            sanctioned_count= VALUES(sanctioned_count),
            min_salary      = VALUES(min_salary),
            max_salary      = VALUES(max_salary)`,
-        [profile, department || null, state || null, branch || null,
+        [profile, department || null, state, branch,
          sanctioned_count || 0, min_salary || null, max_salary || null]
       );
-      const [row] = await query('SELECT * FROM hr_sanctioned_posts WHERE profile = ?', [profile]);
+      const [row] = await query(
+        'SELECT * FROM hr_sanctioned_posts WHERE profile = ? AND state = ? AND branch = ?',
+        [profile, state, branch]
+      );
       return res.status(201).json(row);
     } catch (err) {
       return res.status(500).json({ error: err.message });

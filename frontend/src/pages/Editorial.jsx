@@ -71,7 +71,6 @@ const fmtTime = iso => {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const yyyyMM = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TAB 1 — NEWS FEED
 // ─────────────────────────────────────────────────────────────────────────────
 function NewsFeedTab({ anniversaries, summary }) {
@@ -134,43 +133,44 @@ function NewsFeedTab({ anniversaries, summary }) {
         </div>
 
         {loading && (
-          <div className="space-y-3">
-            {[1,2,3,4,5].map(i => <div key={i} className="card h-20 animate-pulse" />)}
-          </div>
+          <div className="card h-14 animate-pulse rounded-lg" />
         )}
 
         {!loading && active && active.articles.length === 0 && (
-          <div className="card p-6 text-center text-sm" style={{ color:'var(--muted)' }}>
+          <div className="card p-4 text-center text-sm" style={{ color:'var(--muted)' }}>
             {active.error ? `Feed error: ${active.error}` : 'No articles available right now.'}
           </div>
         )}
 
-        {!loading && active && active.articles.map((art, i) => (
-          <div key={i} className="card p-4 hover:shadow-md transition-shadow">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 text-xs font-bold rounded px-1.5 py-0.5 flex-shrink-0"
-                style={{ background: active.color+'18', color: active.color }}>
-                {String(i+1).padStart(2,'0')}
-              </span>
-              <div className="flex-1 min-w-0">
-                <a href={art.link || '#'} target="_blank" rel="noopener noreferrer"
-                   className="font-semibold text-sm leading-snug hover:underline flex items-start gap-1">
-                  {art.title}
-                  {art.link && <ExternalLink size={11} className="flex-shrink-0 mt-0.5 opacity-50" />}
-                </a>
+        {!loading && active && active.articles.length > 0 && (
+          <div className="space-y-2">
+            {active.articles.map((art, i) => (
+              <a
+                key={i}
+                href={art.link || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="card block p-3 hover:shadow transition"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm font-medium leading-snug" style={{ color: 'var(--text)' }}>
+                    {art.title}
+                  </span>
+                  <ExternalLink size={12} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--muted)' }} />
+                </div>
                 {art.desc && (
-                  <p className="mt-1 text-xs leading-relaxed line-clamp-2" style={{ color:'var(--muted)' }}>
-                    {art.desc}
+                  <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--muted)' }}>{art.desc}</p>
+                )}
+                {art.pubDate && (
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--muted)' }}>
+                    <Clock size={10} className="inline mr-1" />
+                    {fmtTime(art.pubDate)}
                   </p>
                 )}
-                <div className="mt-2 flex flex-wrap gap-2 text-xs" style={{ color:'var(--muted)' }}>
-                  {art.pubDate && <span><Clock size={10} className="inline mr-0.5" />{fmtDate(art.pubDate)}</span>}
-                  {art.category && <span className="pill" style={{ background:'var(--bg)', padding:'1px 6px' }}>{art.category}</span>}
-                </div>
-              </div>
-            </div>
+              </a>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
     </div>
