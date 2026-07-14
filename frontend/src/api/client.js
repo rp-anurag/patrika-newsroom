@@ -250,6 +250,7 @@ export const api = {
   // ── PLI & Grading ───────────────────────────────────────────────────────────
   hrGrading:         (month)     => withFallback(`/hr/grading?month=${month}`, []),
   hrGradingAuto:     (month)     => withFallback(`/hr/grading-auto?month=${month}`, { scores: {} }),
+  hrGradingTop:      (state, branch) => withFallback(`/hr/grading-top?state=${encodeURIComponent(state || 'All')}&branch=${encodeURIComponent(branch || 'All')}`, { top3: [], worst3: [], month: '' }),
   saveGrading:       (data)      => request('/hr/grading', { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Admin Stats ─────────────────────────────────────────────────────────────

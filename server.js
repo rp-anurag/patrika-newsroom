@@ -222,6 +222,7 @@ app.all('/api/hr/candidates/:id',     h('./api/hr/candidates/[id]'));
 app.all('/api/hr/candidates',         h('./api/hr/candidates'));
 app.all('/api/hr/training',           h('./api/hr/training'));
 app.all('/api/hr/grading-auto',       h('./api/hr/grading-auto'));
+app.all('/api/hr/grading-top',        h('./api/hr/grading-top'));
 app.all('/api/hr/grading',            h('./api/hr/grading'));
 app.all('/api/hr/sanctioned-posts',   h('./api/hr/sanctioned-posts'));
 app.all('/api/hr/admin-stats',        h('./api/hr/admin-stats'));

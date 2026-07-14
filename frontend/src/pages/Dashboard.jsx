@@ -74,6 +74,7 @@ export default function Dashboard() {
   const [topDelay, setTopDelay] = useState([]);
   const [feeds, setFeeds]   = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [gradingTop, setGradingTop] = useState({ top3: [], worst3: [], month: '' });
 
   useEffect(() => {
     api.editorialFeeds().then(d => setFeeds(d.feeds || [])).catch(() => {});
@@ -83,6 +84,12 @@ export default function Dashboard() {
     api.hrAdminStats(state, branch)
       .then(r => setProfiles(r?.profiles || []))
       .catch(() => setProfiles([]));
+  }, [state, branch]);
+
+  useEffect(() => {
+    api.hrGradingTop(state, branch)
+      .then(r => setGradingTop(r || { top3: [], worst3: [], month: '' }))
+      .catch(() => {});
   }, [state, branch]);
 
   useEffect(() => {
@@ -339,6 +346,97 @@ export default function Dashboard() {
           )}
         </SectionCard>
       </div>
+
+      {/* ── Top 3 / Worst 3 Employees — Previous Month ──────────────────────── */}
+      {(gradingTop.top3.length > 0 || gradingTop.worst3.length > 0) && (
+        <div className="mt-4">
+          <SectionCard title={`Employee Performance — ${gradingTop.month ? new Date(gradingTop.month + '-01').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) : 'Previous Month'} (PLI & Grading)`}>
+            <div className="grid gap-4 sm:grid-cols-2">
+
+              {/* Top 3 */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base">🏆</span>
+                  <span className="font-semibold text-sm" style={{ color: '#16a34a' }}>Top Performers</span>
+                </div>
+                {gradingTop.top3.length === 0 ? (
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>No data available</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {gradingTop.top3.map((emp, i) => {
+                      const medals = ['🥇', '🥈', '🥉'];
+                      const barColors = ['#16a34a', '#22c55e', '#4ade80'];
+                      return (
+                        <div key={emp.pan} className="flex items-center gap-3 p-2 rounded-lg"
+                          style={{ background: `rgba(22,163,74,${0.08 - i * 0.02})`, border: '1px solid rgba(22,163,74,0.2)' }}>
+                          <span className="text-xl flex-shrink-0">{medals[i]}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm truncate">{emp.name}</div>
+                            <div className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+                              {emp.story_type} · {emp.branch}
+                              {emp.pli_percent != null ? ` · PLI ${emp.pli_percent}%` : ''}
+                            </div>
+                            <div className="mt-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
+                              <div className="h-1.5 rounded-full transition-all"
+                                style={{ width: `${emp.combined_pct}%`, background: barColors[i] }} />
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <div className="text-lg font-bold tabular-nums" style={{ color: barColors[i] }}>
+                              {emp.combined_pct}%
+                            </div>
+                            <div className="text-xs" style={{ color: 'var(--muted)' }}>score</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Worst 3 */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base">⚠️</span>
+                  <span className="font-semibold text-sm" style={{ color: '#dc2626' }}>Need Improvement</span>
+                </div>
+                {gradingTop.worst3.length === 0 ? (
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>No data available</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {gradingTop.worst3.map((emp, i) => {
+                      const barColors = ['#dc2626', '#ef4444', '#f87171'];
+                      return (
+                        <div key={emp.pan} className="flex items-center gap-3 p-2 rounded-lg"
+                          style={{ background: `rgba(220,38,38,${0.08 - i * 0.02})`, border: '1px solid rgba(220,38,38,0.2)' }}>
+                          <span className="text-xl flex-shrink-0">{['🔴','🟠','🟡'][i]}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm truncate">{emp.name}</div>
+                            <div className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+                              {emp.story_type} · {emp.branch}
+                              {emp.pli_percent != null ? ` · PLI ${emp.pli_percent}%` : ''}
+                            </div>
+                            <div className="mt-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
+                              <div className="h-1.5 rounded-full transition-all"
+                                style={{ width: `${emp.combined_pct}%`, background: barColors[i] }} />
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <div className="text-lg font-bold tabular-nums" style={{ color: barColors[i] }}>
+                              {emp.combined_pct}%
+                            </div>
+                            <div className="text-xs" style={{ color: 'var(--muted)' }}>score</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </SectionCard>
+        </div>
+      )}
 
       {/* ── Profile-wise: Sanctioned vs Available ───────────────────────────── */}
       <div className="mt-4">
