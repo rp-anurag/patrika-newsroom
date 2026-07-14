@@ -378,7 +378,7 @@ export default function Dashboard() {
                             <div className="font-semibold text-sm truncate">{emp.name}</div>
                             <div className="text-xs truncate" style={{ color: 'var(--muted)' }}>
                               {emp.story_type} · {emp.branch}
-                              {emp.pli_amount != null && emp.pli_amount > 0 ? ` · PLI ₹${Number(emp.pli_amount).toLocaleString('en-IN')}` : ''}
+                              {''}
                             </div>
                             <div className="mt-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
                               <div className="h-1.5 rounded-full transition-all"
@@ -418,7 +418,7 @@ export default function Dashboard() {
                             <div className="font-semibold text-sm truncate">{emp.name}</div>
                             <div className="text-xs truncate" style={{ color: 'var(--muted)' }}>
                               {emp.story_type} · {emp.branch}
-                              {emp.pli_amount != null && emp.pli_amount > 0 ? ` · PLI ₹${Number(emp.pli_amount).toLocaleString('en-IN')}` : ''}
+                              {''}
                             </div>
                             <div className="mt-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
                               <div className="h-1.5 rounded-full transition-all"
