@@ -74,9 +74,14 @@ module.exports = async (req, res) => {
       pan, emp_code, emp_name, month,
       work_grade, behaviour_grade, discipline_grade, interest_grade,
       pli_percent, remarks, state, branch,
+      overall_grade: overall_grade_from_client,
     } = body;
 
     const overall_grade = calcOverall(work_grade, behaviour_grade, discipline_grade, interest_grade);
+    // overall_pct = combined % sent by the frontend (manual+auto)/45*100 — more accurate than server-computed
+    const overall_pct = overall_grade_from_client != null
+      ? Math.min(100, Math.max(0, Math.round(Number(overall_grade_from_client))))
+      : overall_grade;
 
     // Role-based scope enforcement: State Head → own state; Regional Editor → own state + branch
     if (user.role === 'State Head' && user.state && state && state !== user.state) {
@@ -91,9 +96,9 @@ module.exports = async (req, res) => {
       await query(
         `INSERT INTO hr_grading
            (pan, emp_code, emp_name, month, work_grade, behaviour_grade,
-            discipline_grade, interest_grade, overall_grade, pli_percent,
-            remarks, state, branch)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            discipline_grade, interest_grade, overall_grade, overall_pct,
+            pli_percent, remarks, state, branch)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            emp_code         = VALUES(emp_code),
            emp_name         = VALUES(emp_name),
@@ -102,6 +107,7 @@ module.exports = async (req, res) => {
            discipline_grade = VALUES(discipline_grade),
            interest_grade   = VALUES(interest_grade),
            overall_grade    = VALUES(overall_grade),
+           overall_pct      = VALUES(overall_pct),
            pli_percent      = VALUES(pli_percent),
            remarks          = VALUES(remarks),
            state            = COALESCE(VALUES(state), state),
@@ -111,7 +117,8 @@ module.exports = async (req, res) => {
           pan, emp_code || null, emp_name || null, month,
           work_grade || null, behaviour_grade || null,
           discipline_grade || null, interest_grade || null,
-          overall_grade, pli_percent || null, remarks || null,
+          overall_grade, overall_pct,
+          pli_percent || null, remarks || null,
           state || null, branch || null,
         ]
       );

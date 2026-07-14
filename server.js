@@ -289,6 +289,10 @@ app.get('*', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
+// Add overall_pct column (SMALLINT) to store the true combined % from the frontend
+const { ensureColumn } = require('./api/_lib/schema');
+ensureColumn('hr_grading', 'overall_pct', 'SMALLINT DEFAULT NULL').catch(() => {});
+
 app.listen(PORT, () => {
   console.log(`✅ Patrika Newsroom running at http://localhost:${PORT}`);
   console.log(`   MySQL: ${process.env.MYSQL_HOST}:${process.env.MYSQL_PORT || 3306} / ${process.env.MYSQL_DATABASE}`);

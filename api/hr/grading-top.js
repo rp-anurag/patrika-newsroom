@@ -47,7 +47,7 @@ module.exports = async (req, res) => {
          COALESCE(g.branch,   u.Branch)                                        AS branch,
          CASE WHEN u.Story_Type = 'NE' THEN COALESCE(u.profile, 'NE')
               ELSE COALESCE(u.Story_Type, '—') END                             AS story_type,
-         g.pli_percent,
+         g.overall_pct,
          CAST(COALESCE(g.work_grade,       '0') AS UNSIGNED) AS w,
          CAST(COALESCE(g.behaviour_grade,  '0') AS UNSIGNED) AS b,
          CAST(COALESCE(g.discipline_grade, '0') AS UNSIGNED) AS d,
@@ -62,18 +62,18 @@ module.exports = async (req, res) => {
     if (!rows.length) return res.json({ month, top3: [], worst3: [], total: 0 });
 
     const scored = rows.map(r => {
-      const sum = (Number(r.w)||0) + (Number(r.b)||0) + (Number(r.d)||0) + (Number(r.i)||0);
-      const pct = Math.round((sum / 20) * 100);
+      // Use overall_pct (combined manual+auto %) if available, else fall back to manual-only
+      const sum     = (Number(r.w)||0) + (Number(r.b)||0) + (Number(r.d)||0) + (Number(r.i)||0);
+      const manPct  = Math.round((sum / 20) * 100);
+      const scorePct = r.overall_pct != null ? Math.min(100, Math.max(0, Number(r.overall_pct))) : manPct;
       return {
-        pan:         r.pan,
-        name:        r.name || r.pan,
-        branch:      r.branch || '—',
-        story_type:  r.story_type || '—',
-        pli_amount:  r.pli_percent != null ? Number(r.pli_percent) : null,
-        manual_sum:  sum,
-        score_pct:   pct,
+        pan:        r.pan,
+        name:       r.name || r.pan,
+        branch:     r.branch || '—',
+        story_type: r.story_type || '—',
+        score_pct:  scorePct,
       };
-    }).filter(e => e.manual_sum > 0);
+    }).filter(e => e.score_pct > 0);
 
     scored.sort((a, b) => b.score_pct - a.score_pct);
 
