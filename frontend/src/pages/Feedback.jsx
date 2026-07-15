@@ -7,9 +7,38 @@ import {
 } from 'lucide-react';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const TYPES     = ['Addition', 'Modification', 'Bug Report', 'Other'];
+const TYPES = [
+  'Portal Bug / Technical Issue',
+  'Feature Request',
+  'Story / Photo Count Issue',
+  'QC Score Dispute',
+  'Page Delay Issue',
+  'Grading Dispute',
+  'Field Visit Issue',
+  'HR / Attendance / Leave',
+  'Training Request',
+  'Editorial Suggestion',
+  'Other',
+];
+
+const DEPARTMENTS = ['Production', 'Editorial', 'Photography', 'HR & Admin', 'Digital', 'Legal', 'General'];
+
+const TYPE_HINTS = {
+  'Portal Bug / Technical Issue': 'Which page? What action triggered the bug? What did you expect to happen?',
+  'Feature Request':              'Describe the feature and how it would help your daily workflow…',
+  'Story / Photo Count Issue':    'Date, edition/branch, expected count vs actual count shown in portal…',
+  'QC Score Dispute':             'Date, edition, reporter name, number of mistakes flagged vs actual…',
+  'Page Delay Issue':             'Edition name, scheduled release time, actual release time observed…',
+  'Grading Dispute':              'Month, grading category, expected score vs score shown in portal…',
+  'Field Visit Issue':            'Visit date, location, reporter name, nature of issue…',
+  'HR / Attendance / Leave':      'Date range, issue type (attendance / leave / salary), expected resolution…',
+  'Training Request':             'Topic, preferred format (online/offline), number of staff involved…',
+  'Editorial Suggestion':         'Content type, suggestion details, which edition/section it applies to…',
+  'Other':                        'Describe your request in detail…',
+};
+
 const PRIORITIES = ['Low', 'Medium', 'High'];
-const STATUSES  = ['New', 'Reviewed', 'Done'];
+const STATUSES   = ['New', 'Reviewed', 'Done'];
 
 const PRIORITY_COLOR = {
   Low:    { bg: '#d1fae515', border: '#10b98130', text: '#10b981' },
@@ -33,7 +62,7 @@ function Badge({ label, colors }) {
 
 // ── Submit Form ───────────────────────────────────────────────────────────────
 function FeedbackForm({ onSubmitted }) {
-  const [form, setForm]     = useState({ type: 'Other', subject: '', description: '', priority: 'Medium' });
+  const [form, setForm]     = useState({ type: 'Other', department: 'General', subject: '', description: '', priority: 'Medium' });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState(null);
 
@@ -42,12 +71,12 @@ function FeedbackForm({ onSubmitted }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.subject.trim() || !form.description.trim()) {
-      setError('Subject and description are required.'); return;
+      setError('Subject and details are required.'); return;
     }
     setSaving(true); setError(null);
     try {
       const created = await api.createFeedback(form);
-      setForm({ type: 'Other', subject: '', description: '', priority: 'Medium' });
+      setForm({ type: 'Other', department: 'General', subject: '', description: '', priority: 'Medium' });
       onSubmitted(created);
     } catch (err) {
       setError(err.message);
@@ -57,24 +86,28 @@ function FeedbackForm({ onSubmitted }) {
 
   const labelStyle = { fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 4, display: 'block' };
   const selectStyle = {
-    width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 14,
+    width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13,
     border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
-    outline: 'none',
+    outline: 'none', appearance: 'none',
   };
+  const hint = TYPE_HINTS[form.type] || TYPE_HINTS['Other'];
 
   return (
     <form onSubmit={handleSubmit} style={{
       background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 16, padding: 24,
     }}>
-      <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 20 }}>
-        Submit Feedback
+      <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
+        Submit Feedback / Request
       </h2>
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
+        Report an issue, raise a dispute, or suggest an improvement for the newsroom portal.
+      </p>
 
+      {/* Row 1: Type + Department */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        {/* Type */}
         <div>
-          <label style={labelStyle}>Type</label>
+          <label style={labelStyle}>Category</label>
           <div style={{ position: 'relative' }}>
             <select value={form.type} onChange={e => set('type', e.target.value)} style={selectStyle}>
               {TYPES.map(t => <option key={t}>{t}</option>)}
@@ -82,15 +115,33 @@ function FeedbackForm({ onSubmitted }) {
             <ChevronDown size={13} style={{ position: 'absolute', right: 10, top: 11, color: 'var(--muted)', pointerEvents: 'none' }} />
           </div>
         </div>
-        {/* Priority */}
         <div>
-          <label style={labelStyle}>Priority</label>
+          <label style={labelStyle}>Department</label>
           <div style={{ position: 'relative' }}>
-            <select value={form.priority} onChange={e => set('priority', e.target.value)} style={selectStyle}>
-              {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+            <select value={form.department} onChange={e => set('department', e.target.value)} style={selectStyle}>
+              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
             </select>
             <ChevronDown size={13} style={{ position: 'absolute', right: 10, top: 11, color: 'var(--muted)', pointerEvents: 'none' }} />
           </div>
+        </div>
+      </div>
+
+      {/* Row 2: Priority */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={labelStyle}>Priority</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {PRIORITIES.map(p => (
+            <button
+              key={p} type="button"
+              onClick={() => set('priority', p)}
+              style={{
+                padding: '6px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1px solid',
+                background: form.priority === p ? PRIORITY_COLOR[p].text : 'transparent',
+                borderColor: PRIORITY_COLOR[p].text,
+                color: form.priority === p ? '#fff' : PRIORITY_COLOR[p].text,
+              }}
+            >{p}</button>
+          ))}
         </div>
       </div>
 
@@ -100,19 +151,24 @@ function FeedbackForm({ onSubmitted }) {
         <input
           value={form.subject}
           onChange={e => set('subject', e.target.value)}
-          placeholder="Brief description of your request…"
+          placeholder="One-line summary of the issue or request…"
           style={{ ...selectStyle, padding: '9px 12px' }}
         />
       </div>
 
-      {/* Description */}
+      {/* Description with dynamic hint */}
       <div style={{ marginBottom: 20 }}>
         <label style={labelStyle}>Details</label>
+        {hint && (
+          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontStyle: 'italic' }}>
+            Tip: {hint}
+          </p>
+        )}
         <textarea
           value={form.description}
           onChange={e => set('description', e.target.value)}
           rows={5}
-          placeholder="Describe the addition or modification you need in detail…"
+          placeholder="Provide all relevant details…"
           style={{ ...selectStyle, resize: 'vertical', lineHeight: 1.6 }}
         />
       </div>
@@ -129,7 +185,7 @@ function FeedbackForm({ onSubmitted }) {
           background: saving ? '#94a3b8' : 'var(--brand)', color: '#fff', fontWeight: 600, fontSize: 14,
         }}
       >
-        <Send size={15} /> {saving ? 'Submitting…' : 'Submit Feedback'}
+        <Send size={15} /> {saving ? 'Submitting…' : 'Submit'}
       </button>
     </form>
   );
@@ -170,9 +226,12 @@ function FeedbackCard({ item, isAdmin, onUpdate, onDelete }) {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{item.subject}</span>
-            <Badge label={item.type}     colors={{ bg: '#f1f5f915', border: 'var(--border)', text: 'var(--muted)' }} />
-            <Badge label={item.priority} colors={priColors} />
-            <Badge label={item.status}   colors={stColors} />
+            <Badge label={item.type}       colors={{ bg: '#f1f5f915', border: 'var(--border)', text: 'var(--muted)' }} />
+            {item.department && item.department !== 'General' && (
+              <Badge label={item.department} colors={{ bg: '#eff6ff15', border: '#3b82f630', text: '#3b82f6' }} />
+            )}
+            <Badge label={item.priority}   colors={priColors} />
+            <Badge label={item.status}     colors={stColors} />
           </div>
           {isAdmin && (
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>
@@ -250,6 +309,7 @@ export default function FeedbackPage() {
   const [loading, setLoading]       = useState(true);
   const [submitted, setSubmitted]   = useState(false);
   const [filterStatus, setFilter]   = useState('All');
+  const [filterType, setFilterType] = useState('All');
 
   const load = async () => {
     setLoading(true);
@@ -277,7 +337,9 @@ export default function FeedbackPage() {
     } catch { /* ignore */ }
   };
 
-  const filtered = filterStatus === 'All' ? items : items.filter(i => i.status === filterStatus);
+  const filtered = items
+    .filter(i => filterStatus === 'All' || i.status === filterStatus)
+    .filter(i => filterType   === 'All' || i.type   === filterType);
 
   // Status counts for admin filter tabs
   const counts = STATUSES.reduce((acc, s) => ({ ...acc, [s]: items.filter(i => i.status === s).length }), {});
@@ -317,22 +379,38 @@ export default function FeedbackPage() {
 
       {/* Admin: filter tabs */}
       {isAdmin && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          {['All', ...STATUSES].map(s => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              style={{
-                padding: '6px 14px', borderRadius: 20, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, fontWeight: filterStatus === s ? 700 : 400,
-                background: filterStatus === s ? 'var(--brand)' : 'transparent',
-                color: filterStatus === s ? '#fff' : 'var(--text)',
-              }}
-            >
-              {s} {s !== 'All' && counts[s] > 0 && <span style={{ opacity: 0.8 }}>({counts[s]})</span>}
-              {s === 'All' && <span style={{ opacity: 0.8 }}> ({items.length})</span>}
-            </button>
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Filter size={13} style={{ color: 'var(--muted)' }} />
+            {['All', ...STATUSES].map(s => (
+              <button
+                key={s}
+                onClick={() => setFilter(s)}
+                style={{
+                  padding: '5px 13px', borderRadius: 20, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, fontWeight: filterStatus === s ? 700 : 400,
+                  background: filterStatus === s ? 'var(--brand)' : 'transparent',
+                  color: filterStatus === s ? '#fff' : 'var(--text)',
+                }}
+              >
+                {s} {s !== 'All' && counts[s] > 0 && <span style={{ opacity: 0.8 }}>({counts[s]})</span>}
+                {s === 'All' && <span style={{ opacity: 0.8 }}> ({items.length})</span>}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
+            {['All', ...TYPES].map(t => (
+              <button
+                key={t}
+                onClick={() => setFilterType(t)}
+                style={{
+                  padding: '4px 11px', borderRadius: 20, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 11,
+                  background: filterType === t ? '#1e293b' : 'transparent',
+                  color: filterType === t ? '#fff' : 'var(--muted)',
+                }}
+              >{t}</button>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Feedback list */}

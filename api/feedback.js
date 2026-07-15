@@ -33,7 +33,7 @@ module.exports = async (req, res) => {
   // ── POST ──────────────────────────────────────────────────────────────────
   if (req.method === 'POST') {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    const { type, subject, description, priority } = body;
+    const { type, subject, description, priority, department } = body;
 
     if (!subject?.trim() || !description?.trim())
       return res.status(422).json({ error: 'subject and description are required' });
@@ -45,8 +45,8 @@ module.exports = async (req, res) => {
 
       const result = await query(
         `INSERT INTO feedback
-           (submitted_by, name, role, state, branch, type, subject, description, priority)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (submitted_by, name, role, state, branch, type, subject, description, priority, department)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           user.sub,
           name,
@@ -57,6 +57,7 @@ module.exports = async (req, res) => {
           subject.trim(),
           description.trim(),
           priority    || 'Medium',
+          department  || 'General',
         ]
       );
       const [created] = await query('SELECT * FROM feedback WHERE id = ?', [result.insertId]);
@@ -78,7 +79,8 @@ async function ensureTable() {
       role         VARCHAR(50),
       state        VARCHAR(100),
       branch       VARCHAR(100),
-      type         VARCHAR(50)  NOT NULL DEFAULT 'Other',
+      type         VARCHAR(80)  NOT NULL DEFAULT 'Other',
+      department   VARCHAR(80)  NOT NULL DEFAULT 'General',
       subject      VARCHAR(300) NOT NULL,
       description  TEXT         NOT NULL,
       priority     VARCHAR(20)  NOT NULL DEFAULT 'Medium',
@@ -88,4 +90,7 @@ async function ensureTable() {
       updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
+  // Add department column to existing tables that predate this change
+  await query(`ALTER TABLE feedback ADD COLUMN department VARCHAR(80) NOT NULL DEFAULT 'General'`)
+    .catch(() => {});
 }
