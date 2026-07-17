@@ -59,40 +59,39 @@ export default function Layout({ children }) {
           </NavLink>
         ))}
 
-        {/* Editorial Review — auto-login by POSTing the same PAN+password the user
-            logged into the newsroom with (held in sessionStorage for this session) */}
-        <button
-          onClick={() => {
-            let cred = null;
-            try { cred = JSON.parse(decodeURIComponent(escape(atob(localStorage.getItem('pk_sso_cred') || '')))); } catch {}
-            if (!cred?.u || !cred?.p) {
-              // Logged in before this feature existed — ask once, then remember until logout
-              const u = window.prompt('Editorial Review auto-login\n\nEnter your PAN number (newsroom username):');
-              if (!u) { setOpen(false); return; }
-              const p = window.prompt('Enter your password (same as Patrika Newsroom):');
-              if (!p) { setOpen(false); return; }
-              cred = { u: u.trim(), p };
-              try { localStorage.setItem('pk_sso_cred', btoa(unescape(encodeURIComponent(JSON.stringify(cred))))); } catch {}
-            }
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = 'https://editorialreview.patrika.com/login.html';
-            form.target = '_blank';
-            [['loginId', cred.u], ['loginPass', cred.p], ['login', 'Login']].forEach(([n, v]) => {
-              const inp = document.createElement('input');
-              inp.type = 'hidden'; inp.name = n; inp.value = v;
-              form.appendChild(inp);
-            });
-            document.body.appendChild(form);
-            form.submit();
-            form.remove();
-            setOpen(false);
-          }}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-black/5 dark:hover:bg-white/5"
-          style={{ color: 'var(--text)' }}
-        >
-          <ExternalLink size={18} /> Editorial Review
-        </button>
+        {user?.role !== 'Digital' && (
+          <button
+            onClick={() => {
+              let cred = null;
+              try { cred = JSON.parse(decodeURIComponent(escape(atob(localStorage.getItem('pk_sso_cred') || '')))); } catch {}
+              if (!cred?.u || !cred?.p) {
+                const u = window.prompt('Editorial Review auto-login\n\nEnter your PAN number (newsroom username):');
+                if (!u) { setOpen(false); return; }
+                const p = window.prompt('Enter your password (same as Patrika Newsroom):');
+                if (!p) { setOpen(false); return; }
+                cred = { u: u.trim(), p };
+                try { localStorage.setItem('pk_sso_cred', btoa(unescape(encodeURIComponent(JSON.stringify(cred))))); } catch {}
+              }
+              const form = document.createElement('form');
+              form.method = 'POST';
+              form.action = 'https://editorialreview.patrika.com/login.html';
+              form.target = '_blank';
+              [['loginId', cred.u], ['loginPass', cred.p], ['login', 'Login']].forEach(([n, v]) => {
+                const inp = document.createElement('input');
+                inp.type = 'hidden'; inp.name = n; inp.value = v;
+                form.appendChild(inp);
+              });
+              document.body.appendChild(form);
+              form.submit();
+              form.remove();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--text)' }}
+          >
+            <ExternalLink size={18} /> Editorial Review
+          </button>
+        )}
       </nav>
       <div className="border-t p-3 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
         v0.1 · {user?.role}
