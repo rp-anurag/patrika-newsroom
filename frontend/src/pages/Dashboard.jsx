@@ -140,12 +140,6 @@ export default function Dashboard() {
       {/* ── KPI Grid ─────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         <KPICard
-          label="Active Employees"
-          value={k.employees ?? '—'}
-          sub="in workforce"
-          icon={Users}
-        />
-        <KPICard
           label="Stories Yesterday"
           value={k.stories ?? '—'}
           sub={`by ${k.reporters ?? 0} reporters`}
@@ -185,13 +179,6 @@ export default function Dashboard() {
           sub="over schedule"
           accent={k.delayed > 0 ? '#d71920' : '#16a34a'}
           icon={Clock}
-        />
-        <KPICard
-          label="Legal Cases"
-          value={k.legal ?? '—'}
-          sub="active"
-          accent="#7c3aed"
-          icon={Scale}
         />
         <KPICard
           label="Unread Alerts"
