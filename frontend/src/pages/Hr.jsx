@@ -142,7 +142,7 @@ export default function Hr() {
 
   return (
     <div>
-      <PageHeader title={t('nav.hr')} subtitle="Employee management Â· recruitment Â· training Â· PLI & grading Â· admin" />
+      <PageHeader title={t('nav.hr')} subtitle="Employee management · recruitment · training · PLI & grading · admin" />
 
       {/* â”€â”€ Tab Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex gap-1 mb-5 border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
@@ -285,7 +285,7 @@ function OverviewTab({ emps, filtered, rets, loading, ageBuckets, deptBuckets,
                 </div>
                 <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
                   <CalendarClock size={11} className="inline mr-1" />
-                  Retires: {r.retireOn} Â· {r.emp_deptt} Â· {r.Branch}
+                  Retires: {r.retireOn} &middot; {r.emp_deptt} &middot; {r.Branch}
                 </div>
               </div>
             ))}
@@ -658,7 +658,7 @@ function RecruitmentTab() {
               {/* Bottom action bar */}
               <div className="flex items-center gap-3 mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                  {savedCount} saved Â· {unsavedCount} pending
+                  {savedCount} saved &middot; {unsavedCount} pending
                 </span>
                 {unsavedCount > 0 && (
                   <button
@@ -1231,11 +1231,11 @@ function GradingTab({ emps, canEditHr, canViewHr }) {
           <summary className="cursor-pointer font-semibold">Auto Marks (/25) — how it is calculated</summary>
           <p className="mt-1 ml-4">System combines 5 factors (5 marks each) from live data for the selected month; Auto % = total / 25 x 100. Hover the Auto column for each employee's breakdown.</p>
           <ul className="mt-1 ml-4 list-disc space-y-0.5">
-            <li><b>Stories filed</b> (ECMS): 60+ = 5 · 45+ = 4 · 30+ = 3 · 15+ = 2 · 1+ = 1 · 0 = 0</li>
-            <li><b>Field visits</b>: 20+ = 5 · 15+ = 4 · 10+ = 3 · 5+ = 2 · 1+ = 1 · 0 = 0</li>
-            <li><b>QC mistakes</b> (responsible): 0 = 5 · up to 2 = 4 · up to 5 = 3 · up to 9 = 2 · up to 14 = 1 · 15+ = 0</li>
-            <li><b>Attendance</b> (HRMS present %): 95%+ = 5 · 90%+ = 4 · 85%+ = 3 · 75%+ = 2 · 60%+ = 1 · below = 0 · no data = 5</li>
-            <li><b>Page delay</b> (branch avg): up to 5 min = 5 · 15 = 4 · 30 = 3 · 60 = 2 · 90 = 1 · above = 0 · no editions = 5</li>
+            <li><b>Stories filed</b> (ECMS): 60+ = 5 &middot; 45+ = 4 &middot; 30+ = 3 &middot; 15+ = 2 &middot; 1+ = 1 &middot; 0 = 0</li>
+            <li><b>Field visits</b>: 20+ = 5 &middot; 15+ = 4 &middot; 10+ = 3 &middot; 5+ = 2 &middot; 1+ = 1 &middot; 0 = 0</li>
+            <li><b>QC mistakes</b> (responsible): 0 = 5 &middot; up to 2 = 4 &middot; up to 5 = 3 &middot; up to 9 = 2 &middot; up to 14 = 1 &middot; 15+ = 0</li>
+            <li><b>Attendance</b> (HRMS present %): 95%+ = 5 &middot; 90%+ = 4 &middot; 85%+ = 3 &middot; 75%+ = 2 &middot; 60%+ = 1 &middot; below = 0 &middot; no data = 5</li>
+            <li><b>Page delay</b> (branch avg): up to 5 min = 5 &middot; 15 = 4 &middot; 30 = 3 &middot; 60 = 2 &middot; 90 = 1 &middot; above = 0 &middot; no editions = 5</li>
           </ul>
         </details>
 
