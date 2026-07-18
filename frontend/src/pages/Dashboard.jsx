@@ -220,40 +220,6 @@ export default function Dashboard() {
           )}
         </SectionCard>
 
-        <SectionCard title="Staff Profile (Story Type)">
-          {profilePie.length ? (
-            <>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={profilePie} dataKey="value" nameKey="name"
-                    innerRadius={45} outerRadius={78} paddingAngle={2}
-                  >
-                    {profilePie.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs" style={{ color: 'var(--muted)' }}>
-                {profilePie.slice(0, 8).map((s, i) => (
-                  <span key={s.name} className="flex items-center gap-1">
-                    <span
-                      className="h-2 w-2 rounded-full flex-shrink-0"
-                      style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
-                    />
-                    {s.name} ({s.value})
-                  </span>
-                ))}
-              </div>
-            </>
-          ) : (
-            <EmptyState msg="No profile data available" />
-          )}
-        </SectionCard>
       </div>
 
       {/* ── Top 10 Delayed Editions (Last 7 Days) ───────────────────────────── */}
