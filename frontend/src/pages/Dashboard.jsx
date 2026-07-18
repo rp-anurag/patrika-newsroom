@@ -140,10 +140,10 @@ export default function Dashboard() {
       {/* ── KPI Grid ─────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         <KPICard
-          label="Target Hit (5 Stories)"
-          value={k.totalReporters ? `${k.reporterHit}/${k.totalReporters}` : '—'}
-          sub="reporters · yesterday"
-          accent={k.reporterHit > 0 && k.reporterHit >= k.totalReporters * 0.5 ? '#16a34a' : '#d71920'}
+          label="Avg Stories / Reporter"
+          value={k.reporterTotal > 0 ? (k.reporterStories / k.reporterTotal).toFixed(1) : '—'}
+          sub={k.reporterTotal > 0 ? `${k.reporterStories} stories · target ${k.reporterTotal * 5} · yesterday` : 'yesterday'}
+          accent={(k.reporterTotal > 0 ? k.reporterStories / k.reporterTotal : 0) >= 5 ? '#16a34a' : '#d71920'}
           icon={PenLine}
         />
         <KPICard

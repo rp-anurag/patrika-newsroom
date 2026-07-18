@@ -194,10 +194,10 @@ module.exports = async function handler(req, res) {
              WHERE input_file LIKE ? AND date_time_pdf IS NOT NULL
              GROUP BY code`, [todayGmgPrefix]).catch(() => []),
 
-      // 13. Reporter 5-story target — yesterday
+      // 13. Reporter stories vs 5/day target — yesterday
       query(`SELECT
-               COUNT(DISTINCT u.pan_no) AS total_reporters,
-               COUNT(DISTINCT CASE WHEN COALESCE(d.No_Story, 0) >= 5 THEN u.pan_no END) AS hit_target
+               COUNT(DISTINCT u.pan_no)       AS total_reporters,
+               COALESCE(SUM(d.No_Story), 0)   AS total_stories
              FROM \`${TABLE}\` u
              LEFT JOIN daily_achievment_count_ecms d
                ON u.pan_no = d.Pan_no AND d.entrydate = ?
@@ -292,8 +292,8 @@ module.exports = async function handler(req, res) {
         stories:         Number(storiesYday[0]?.stories || 0),
         reporters:       Number(storiesYday[0]?.reporters || 0),
         photos:          Number(storiesYday[0]?.photos  || 0),
-        reporterHit:     Number(reporterTarget[0]?.hit_target    || 0),
-        totalReporters:  Number(reporterTarget[0]?.total_reporters || 0),
+        reporterTotal:   Number(reporterTarget[0]?.total_reporters || 0),
+        reporterStories: Number(reporterTarget[0]?.total_stories   || 0),
         visits:          Number(visitsToday[0]?.cnt || 0),
         qcMistakes:   Number(qcToday[0]?.mistakes || 0),
         legal:        Number(legalRows[0]?.cnt || 0),
