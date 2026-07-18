@@ -147,10 +147,10 @@ export default function Dashboard() {
           icon={PenLine}
         />
         <KPICard
-          label="Field Visits"
-          value={k.visits ?? '—'}
-          sub="yesterday"
-          accent="#16a34a"
+          label="Avg Visits / Field Staff"
+          value={k.fieldStaffTotal > 0 ? (k.visits / k.fieldStaffTotal).toFixed(1) : '—'}
+          sub={k.fieldStaffTotal > 0 ? `${k.visits} visits · target ${k.fieldStaffTotal * 3} · yesterday` : 'yesterday'}
+          accent={(k.fieldStaffTotal > 0 ? k.visits / k.fieldStaffTotal : 0) >= 3 ? '#16a34a' : '#d71920'}
           icon={MapPin}
         />
         <KPICard
