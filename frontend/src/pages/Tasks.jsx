@@ -4,6 +4,7 @@ import {
   ClipboardList, Plus, X, CheckCircle2, Clock, AlertCircle, Ban,
   ChevronDown, ChevronUp, Users, BarChart2, MessageSquare, Send,
   Trash2, Edit2, UserPlus, Star, Loader2, Calendar,
+  Newspaper, MapPin, BadgeCheck, Circle, ChevronRight,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api }   from '../api/client.js';
@@ -1178,6 +1179,406 @@ function nextMonday() {
   return d.toISOString().slice(0, 10);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAJOR EVENT PLANNING & IMPLEMENTATION
+// ─────────────────────────────────────────────────────────────────────────────
+const EVENT_TYPES = [
+  'Election Coverage', 'Festival / Special Edition', 'Investigative Series Launch',
+  'State Level Event', 'National Event Coverage', 'Sports Special Coverage',
+  'Supplement / Pullout', 'Press Conference Coverage', 'Exclusive Interview Campaign',
+  'Civic Campaign / Readers\' Issue', 'Awards & Felicitation', 'Cultural Event Coverage',
+  'Budget / Finance Coverage', 'Panchayat / Local Body Coverage', 'Health Campaign',
+  'Education Special', 'Crime / Court Series', 'Environment Coverage', 'Other',
+];
+
+const EVENT_STATUS = {
+  submitted:   { label: 'Submitted',   color: '#3b82f6', bg: '#eff6ff' },
+  approved:    { label: 'Approved',    color: '#16a34a', bg: '#f0fdf4' },
+  rejected:    { label: 'Rejected',    color: '#dc2626', bg: '#fef2f2' },
+  in_progress: { label: 'In Progress', color: '#f59e0b', bg: '#fffbeb' },
+  completed:   { label: 'Completed',   color: '#7c3aed', bg: '#f5f3ff' },
+};
+
+const BLANK_CHECKLIST = [
+  { title: 'Story angles finalized and assigned', assignee: '', due: '', done: false },
+  { title: 'Photographer/videographer deployed', assignee: '', due: '', done: false },
+  { title: 'Page layout plan submitted to desk', assignee: '', due: '', done: false },
+  { title: 'Field reporters briefed', assignee: '', due: '', done: false },
+  { title: 'Stringers activated for coverage', assignee: '', due: '', done: false },
+  { title: 'Copy filed and subbed on time', assignee: '', due: '', done: false },
+  { title: 'Post-event impact story planned', assignee: '', due: '', done: false },
+];
+
+const BLANK_FORM = {
+  event_name: '', event_type: EVENT_TYPES[0], event_start: '', event_end: '',
+  location: '', planning_notes: '', staffing_plan: '', resources: '',
+  checklist: BLANK_CHECKLIST,
+};
+
+function EventStatusBadge({ status }) {
+  const s = EVENT_STATUS[status] || EVENT_STATUS.submitted;
+  return (
+    <span style={{ background: s.bg, color: s.color, fontSize: 11, padding: '2px 10px', borderRadius: 9999, fontWeight: 700 }}>
+      {s.label}
+    </span>
+  );
+}
+
+function EventPlanningTab() {
+  const { user, state: globalState, branch: globalBranch } = useApp();
+  const [events,     setEvents]     = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [showForm,   setShowForm]   = useState(false);
+  const [form,       setForm]       = useState(BLANK_FORM);
+  const [editId,     setEditId]     = useState(null);
+  const [expanded,   setExpanded]   = useState(null);
+  const [saving,     setSaving]     = useState(false);
+  const [reviewing,  setReviewing]  = useState(null); // { id, comment, status }
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const isRE    = user?.role === 'Regional Editor';
+  const canReview = user?.role === 'Admin' || user?.role === 'State Head' || user?.role === 'Management';
+  const canCreate = isRE || canReview;
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.listEvents(globalState, globalBranch)
+      .then(r => { setEvents(r.events || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [globalState, globalBranch]);
+  useEffect(() => { load(); }, [load]);
+
+  function openNew() {
+    setForm(BLANK_FORM); setEditId(null); setShowForm(true);
+  }
+  function openEdit(ev) {
+    setForm({
+      event_name: ev.event_name, event_type: ev.event_type,
+      event_start: ev.event_start?.slice(0,10) || '', event_end: ev.event_end?.slice(0,10) || '',
+      location: ev.location || '', planning_notes: ev.planning_notes || '',
+      staffing_plan: ev.staffing_plan || '', resources: ev.resources || '',
+      checklist: ev.checklist?.length ? ev.checklist : BLANK_CHECKLIST,
+    });
+    setEditId(ev.id); setShowForm(true);
+  }
+
+  async function saveForm() {
+    if (!form.event_name.trim()) { alert('Event name is required'); return; }
+    setSaving(true);
+    try {
+      await api.saveEvent({ ...form, ...(editId ? { id: editId } : {}) });
+      setShowForm(false); load();
+    } catch (e) { alert('Error: ' + e.message); }
+    setSaving(false);
+  }
+
+  async function submitReview() {
+    if (!reviewing) return;
+    setSaving(true);
+    try {
+      await api.saveEvent({ review: true, id: reviewing.id, review_comment: reviewing.comment, status: reviewing.status });
+      setReviewing(null); load();
+    } catch (e) { alert('Error: ' + e.message); }
+    setSaving(false);
+  }
+
+  async function toggleCheckItem(ev, idx) {
+    const updated = ev.checklist.map((item, i) => i === idx ? { ...item, done: !item.done } : item);
+    try {
+      await api.saveEvent({ progress: true, id: ev.id, checklist: updated });
+      setEvents(es => es.map(e => e.id === ev.id ? { ...e, checklist: updated } : e));
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const visible = statusFilter === 'all' ? events : events.filter(e => e.status === statusFilter);
+
+  return (
+    <div>
+      {/* Header actions */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {['all', ...Object.keys(EVENT_STATUS)].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              style={{
+                padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: statusFilter === s ? 'var(--brand)' : 'var(--bg)',
+                color: statusFilter === s ? '#fff' : 'var(--fg)',
+                border: '1px solid var(--border)',
+              }}>
+              {s === 'all' ? 'All' : EVENT_STATUS[s].label}
+            </button>
+          ))}
+        </div>
+        {canCreate && (
+          <button className="btn-primary flex items-center gap-2" onClick={openNew}>
+            <Plus size={15} /> New Event Plan
+          </button>
+        )}
+      </div>
+
+      {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}><Loader2 size={20} className="animate-spin" /></div>}
+
+      {!loading && visible.length === 0 && (
+        <div className="card p-10 text-center" style={{ color: 'var(--muted)' }}>
+          <Newspaper size={32} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+          <div style={{ fontSize: 14 }}>No event plans yet. Click "New Event Plan" to get started.</div>
+        </div>
+      )}
+
+      {/* Event cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {visible.map(ev => {
+          const isOpen = expanded === ev.id;
+          const doneCount = (ev.checklist || []).filter(c => c.done).length;
+          const totalCount = (ev.checklist || []).length;
+          const pct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+          const canEdit = isRE && (ev.status === 'submitted' || ev.status === 'rejected');
+
+          return (
+            <div key={ev.id} className="card overflow-hidden">
+              {/* Card header */}
+              <button className="w-full text-left p-4 hover:bg-black/5 dark:hover:bg-white/5 transition"
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                onClick={() => setExpanded(isOpen ? null : ev.id)}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>{ev.event_name}</span>
+                      <EventStatusBadge status={ev.status} />
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 9999, background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                        {ev.event_type}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12, color: 'var(--muted)' }}>
+                      {ev.event_start && <span>📅 {fmtDate(ev.event_start)}{ev.event_end && ev.event_end !== ev.event_start ? ` – ${fmtDate(ev.event_end)}` : ''}</span>}
+                      {ev.location   && <span>📍 {ev.location}</span>}
+                      <span>🏢 {ev.branch} · {ev.state}</span>
+                      <span>By {ev.submitted_by_name || ev.submitted_by}</span>
+                    </div>
+                    {totalCount > 0 && (
+                      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 4, borderRadius: 4, background: 'var(--border)' }}>
+                          <div style={{ width: `${pct}%`, height: 4, borderRadius: 4, background: pct === 100 ? '#16a34a' : '#3b82f6', transition: 'width 0.3s' }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{doneCount}/{totalCount} tasks done</span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {canEdit && (
+                      <button className="btn-ghost" style={{ fontSize: 12, padding: '4px 10px' }}
+                        onClick={e => { e.stopPropagation(); openEdit(ev); }}>
+                        <Edit2 size={13} />
+                      </button>
+                    )}
+                    {canReview && ev.status === 'submitted' && (
+                      <button className="btn-primary" style={{ fontSize: 12, padding: '4px 12px' }}
+                        onClick={e => { e.stopPropagation(); setReviewing({ id: ev.id, comment: '', status: 'approved' }); }}>
+                        Review
+                      </button>
+                    )}
+                    <ChevronRight size={16} style={{ color: 'var(--muted)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </div>
+                </div>
+              </button>
+
+              {/* Expanded detail */}
+              {isOpen && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: 16, background: 'var(--bg)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 16 }}>
+                    {ev.planning_notes && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Coverage Plan</div>
+                        <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{ev.planning_notes}</p>
+                      </div>
+                    )}
+                    {ev.staffing_plan && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Team & Staffing</div>
+                        <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{ev.staffing_plan}</p>
+                      </div>
+                    )}
+                    {ev.resources && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Resources Required</div>
+                        <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{ev.resources}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Checklist */}
+                  {ev.checklist?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Implementation Checklist</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {ev.checklist.map((item, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 8, background: item.done ? '#f0fdf4' : 'var(--surface)', border: `1px solid ${item.done ? '#86efac' : 'var(--border)'}` }}>
+                            <button onClick={() => toggleCheckItem(ev, i)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, color: item.done ? '#16a34a' : 'var(--muted)', flexShrink: 0 }}>
+                              {item.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                            </button>
+                            <span style={{ flex: 1, fontSize: 13, textDecoration: item.done ? 'line-through' : 'none', color: item.done ? 'var(--muted)' : 'var(--fg)' }}>{item.title}</span>
+                            {item.assignee && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.assignee}</span>}
+                            {item.due && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.due}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Review remarks */}
+                  {ev.review_comment && (
+                    <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: ev.status === 'rejected' ? '#fef2f2' : '#f0fdf4', borderLeft: `3px solid ${ev.status === 'rejected' ? '#dc2626' : '#16a34a'}` }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4, color: ev.status === 'rejected' ? '#dc2626' : '#16a34a' }}>
+                        Reviewer Remarks — {ev.reviewed_by_name || ev.reviewed_by}
+                      </div>
+                      <p style={{ fontSize: 13, margin: 0 }}>{ev.review_comment}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Create / Edit modal ─────────────────────────────────────────────── */}
+      {showForm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowForm(false)} />
+          <div className="card relative z-10 flex flex-col" style={{ width: '100%', maxWidth: 680, maxHeight: '90vh', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <h3 style={{ fontWeight: 700, fontSize: 16 }}>{editId ? 'Edit Event Plan' : 'New Major Event Plan'}</h3>
+              <button onClick={() => setShowForm(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--muted)' }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Event Name *</label>
+                <input className="input w-full mt-1" value={form.event_name}
+                  onChange={e => setForm(f => ({ ...f, event_name: e.target.value }))}
+                  placeholder="e.g. Rajasthan Election Ground Report 2026" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Event Type</label>
+                  <select className="input w-full mt-1" value={form.event_type}
+                    onChange={e => setForm(f => ({ ...f, event_type: e.target.value }))}>
+                    {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Location / Venue</label>
+                  <input className="input w-full mt-1" value={form.location}
+                    onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+                    placeholder="District, City or Area" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Event Start Date</label>
+                  <input type="date" className="input w-full mt-1" value={form.event_start}
+                    onChange={e => setForm(f => ({ ...f, event_start: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Event End Date</label>
+                  <input type="date" className="input w-full mt-1" value={form.event_end}
+                    onChange={e => setForm(f => ({ ...f, event_end: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Coverage Plan (story angles, page plan, photo plan)</label>
+                <textarea className="input w-full mt-1" rows={4} value={form.planning_notes}
+                  onChange={e => setForm(f => ({ ...f, planning_notes: e.target.value }))}
+                  placeholder={`e.g.\n• Page-1 lead: voter mood from 5 booths\n• Page-3 special: candidate profiles\n• Photo essay: 6-8 frames from ground\n• Follow-up story next day`} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Team & Staffing</label>
+                  <textarea className="input w-full mt-1" rows={3} value={form.staffing_plan}
+                    onChange={e => setForm(f => ({ ...f, staffing_plan: e.target.value }))}
+                    placeholder={`e.g.\n2 Reporters\n1 Photographer\n3 Stringers`} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Resources Required</label>
+                  <textarea className="input w-full mt-1" rows={3} value={form.resources}
+                    onChange={e => setForm(f => ({ ...f, resources: e.target.value }))}
+                    placeholder={`e.g.\n1 Vehicle\nExtra pages allocated\nSocial media coordination`} />
+                </div>
+              </div>
+
+              {/* Checklist editor */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Implementation Checklist</label>
+                  <button style={{ fontSize: 12, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                    onClick={() => setForm(f => ({ ...f, checklist: [...f.checklist, { title: '', assignee: '', due: '', done: false }] }))}>
+                    + Add Item
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {form.checklist.map((item, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 6, alignItems: 'center' }}>
+                      <input className="input" style={{ fontSize: 12 }} value={item.title}
+                        onChange={e => setForm(f => ({ ...f, checklist: f.checklist.map((c, j) => j === i ? { ...c, title: e.target.value } : c) }))}
+                        placeholder="Task description" />
+                      <input className="input" style={{ fontSize: 12, width: 100 }} value={item.assignee}
+                        onChange={e => setForm(f => ({ ...f, checklist: f.checklist.map((c, j) => j === i ? { ...c, assignee: e.target.value } : c) }))}
+                        placeholder="Person" />
+                      <input type="date" className="input" style={{ fontSize: 12, width: 130 }} value={item.due}
+                        onChange={e => setForm(f => ({ ...f, checklist: f.checklist.map((c, j) => j === i ? { ...c, due: e.target.value } : c) }))} />
+                      <button onClick={() => setForm(f => ({ ...f, checklist: f.checklist.filter((_, j) => j !== i) }))}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444' }}><X size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+              <button className="btn-ghost" onClick={() => setShowForm(false)} disabled={saving}>Cancel</button>
+              <button className="btn-primary flex items-center gap-2" onClick={saveForm} disabled={saving}>
+                {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Send size={14} /> Submit to State Head</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Review modal (Admin / SH) ───────────────────────────────────────── */}
+      {reviewing && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={() => setReviewing(null)} />
+          <div className="card relative z-10" style={{ width: '100%', maxWidth: 480, padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ fontWeight: 700, fontSize: 16 }}>Review Event Plan</h3>
+              <button onClick={() => setReviewing(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Decision</label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, marginBottom: 14 }}>
+              {['approved','rejected','in_progress'].map(s => (
+                <button key={s} onClick={() => setReviewing(r => ({ ...r, status: s }))}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                    background: reviewing.status === s ? EVENT_STATUS[s]?.color : 'var(--bg)',
+                    color: reviewing.status === s ? '#fff' : 'var(--fg)',
+                    border: `1px solid ${reviewing.status === s ? EVENT_STATUS[s]?.color : 'var(--border)'}` }}>
+                  {EVENT_STATUS[s]?.label}
+                </button>
+              ))}
+            </div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Remarks</label>
+            <textarea className="input w-full mt-1" rows={4} value={reviewing.comment}
+              onChange={e => setReviewing(r => ({ ...r, comment: e.target.value }))}
+              placeholder="Add feedback, suggestions or directives for the RE…" />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button className="btn-ghost" onClick={() => setReviewing(null)} disabled={saving}>Cancel</button>
+              <button className="btn-primary flex items-center gap-2" onClick={submitReview} disabled={saving}>
+                {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><BadgeCheck size={14} /> Submit Review</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WeeklyReviewTab() {
   const { user } = useApp();
   const [plans,     setPlans]     = useState([]);
@@ -1478,7 +1879,7 @@ function PlanEditor({ plan, saving, user, onCancel, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Tasks() {
-  const { user } = useApp();
+  const { user, state: globalState, branch: globalBranch } = useApp();
   const [searchParams] = useSearchParams();
   const [activeTab,    setActiveTab]    = useState(searchParams.get('tab') || 'tasks'); // tasks | groups | bank | report | review
   const [tasks,        setTasks]        = useState([]);
@@ -1496,11 +1897,13 @@ export default function Tasks() {
     try {
       const params = {};
       if (statusFilter !== 'all' && statusFilter !== 'overdue') params.status = statusFilter;
+      if (globalState  && globalState  !== 'All') params.state  = globalState;
+      if (globalBranch && globalBranch !== 'All') params.branch = globalBranch;
       const r = await api.listTasks(params);
       setTasks(r.tasks || []);
     } catch { setTasks([]); }
     finally { setLoading(false); }
-  }, [statusFilter]);
+  }, [statusFilter, globalState, globalBranch]);
 
   useEffect(() => { if (activeTab === 'tasks') load(); }, [load, activeTab]);
 
@@ -1529,6 +1932,7 @@ export default function Tasks() {
     { key: 'bank',     label: 'Task Bank',         Icon: Star },
     { key: 'report',   label: 'Report & Grading',  Icon: BarChart2 },
     { key: 'review',   label: 'Weekly Review',     Icon: Calendar },
+    { key: 'events',   label: 'Major Events',       Icon: Newspaper },
   ];
 
   return (
@@ -1631,6 +2035,7 @@ export default function Tasks() {
       {activeTab === 'bank'   && <TaskBankTab canEdit={canCreate} />}
       {activeTab === 'report' && <ReportTab />}
       {activeTab === 'review' && <WeeklyReviewTab />}
+      {activeTab === 'events' && <EventPlanningTab />}
     </div>
   );
 }

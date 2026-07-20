@@ -26,7 +26,7 @@ const TABS = [
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Legal() {
-  const { t, edition, canEditLegal } = useApp();
+  const { t, edition, canEditLegal, state: globalState, branch: globalBranch } = useApp();
   const [tab,       setTab]       = useState('cases');
   const [cases,     setCases]     = useState([]);
   const [editing,   setEditing]   = useState(null);
@@ -35,9 +35,9 @@ export default function Legal() {
   const [locations, setLocations] = useState({ states: [], branchesByState: {} });
 
   useEffect(() => {
-    api.legalCases(edition).then(setCases);
+    api.legalCases(edition, globalState, globalBranch).then(setCases);
     api.listLocations().then(setLocations);
-  }, [edition]);
+  }, [edition, globalState, globalBranch]);
 
   const showToast = (type, msg) => {
     setToast({ type, msg });

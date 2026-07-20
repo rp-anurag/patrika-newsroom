@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp,
-  FileText, Clock, AlertCircle, MapPin, Award, Users, Newspaper,
+  FileText, Clock, AlertCircle, MapPin, Award, Users, Newspaper, CalendarDays,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api } from '../api/client.js';
@@ -66,6 +66,16 @@ const REPORTS = [
     desc: 'Active employees working on press releases — entry count, editions and last activity date.',
     filterType: 'dateRange',
     defaultTo: 'today',
+  },
+  {
+    type: 'leaves',
+    icon: CalendarDays,
+    color: '#7c3aed',
+    label: 'Leave Register',
+    desc: 'Employee-wise leave summary (CL / EL / SL / LWP / CO etc.) for any date range.',
+    filterType: 'dateRange',
+    defaultFrom: 'lastWeekMon',
+    defaultTo: 'dMinus2',
   },
 ];
 
@@ -203,11 +213,21 @@ function FilterPanel({ filterType, value, onChange, maxToday = false }) {
 }
 
 // ── Default filter values ─────────────────────────────────────────────────────
+function lastWeekMon() {
+  const d = new Date(), day = d.getDay();
+  const back = day === 0 ? 13 : day + 6;
+  return new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
+}
+
 function defaultFilters(report) {
-  const { filterType, defaultTo } = report;
-  if (filterType === 'dateRange') return { from: daysAgo(7), to: defaultTo === 'today' ? today() : yday() };
-  if (filterType === 'date')      return { date: yday() };
-  if (filterType === 'month')     return { month: thisMonth() };
+  const { filterType, defaultTo, defaultFrom } = report;
+  if (filterType === 'dateRange') {
+    const from = defaultFrom === 'lastWeekMon' ? lastWeekMon() : daysAgo(7);
+    const to   = defaultTo === 'today' ? today() : defaultTo === 'dMinus2' ? daysAgo(2) : yday();
+    return { from, to };
+  }
+  if (filterType === 'date')  return { date: yday() };
+  if (filterType === 'month') return { month: thisMonth() };
   return {};
 }
 

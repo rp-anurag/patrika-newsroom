@@ -60,8 +60,9 @@ export const api = {
   syncUsers:   ()         => request('/users/sync',   { method: 'POST' }),
 
   // ── Feedback ─────────────────────────────────────────────────────────────
-  correspondent: (branch, month) => {
+  correspondent: (state, branch, month) => {
     const p = new URLSearchParams();
+    if (state  && state  !== 'All') p.set('state',  state);
     if (branch && branch !== 'All') p.set('branch', branch);
     if (month) p.set('month', month);
     return request(`/correspondent${p.toString() ? '?' + p.toString() : ''}`);
@@ -79,9 +80,10 @@ export const api = {
     const qs = p.toString();
     return withFallback(`/dashboard${qs ? '?' + qs : ''}`, mock.dashboard(state));
   },
-  editorial: (state, month) => {
+  editorial: (state, branch, month) => {
     const p = new URLSearchParams();
-    if (state && state !== 'All') p.set('state', state);
+    if (state  && state  !== 'All') p.set('state',  state);
+    if (branch && branch !== 'All') p.set('branch', branch);
     if (month) p.set('month', month);
     const qs = p.toString();
     return withFallback(`/editorial${qs ? '?' + qs : ''}`, { summary:{}, topNews:[], storyMix:[], targetVsActual:[], deskReview:[], planning:[], anniversaries:[], rndIdeas:[], coverageGaps:[], prominentDays:[] });
@@ -109,11 +111,17 @@ export const api = {
   hrEmployees:  ()        => withFallback('/hr/employees',                    mock.employees),
   hrRetirements:()        => withFallback('/hr/retirements',                  mock.retirements),
   listLocations:  ()        => withFallback('/locations', { states: [], branchesByState: {} }),
-  legalCases:     (edition) => withFallback(`/legal?edition=${edition}`, mock.legal),
+  legalCases: (edition, state, branch) => {
+    const p = new URLSearchParams();
+    if (edition && edition !== 'All') p.set('edition', edition);
+    if (state   && state   !== 'All') p.set('state',   state);
+    if (branch  && branch  !== 'All') p.set('branch',  branch);
+    return withFallback(`/legal${p.toString() ? '?' + p.toString() : ''}`, mock.legal);
+  },
   saveLegalCase:  (caseData) => request('/legal', { method: 'POST', body: JSON.stringify(caseData) }),
   deleteLegalCase:(id)       => request(`/legal/${id}`, { method: 'DELETE' }),
   alerts:       ()        => withFallback('/alerts',                          mock.alerts),
-  alertsLive:   ()        => request('/alerts/live'),
+  alertsLive:   (state, branch) => request(`/alerts/live${state && state !== 'All' ? `?state=${encodeURIComponent(state)}${branch && branch !== 'All' ? `&branch=${encodeURIComponent(branch)}` : ''}` : branch && branch !== 'All' ? `?branch=${encodeURIComponent(branch)}` : ''}`),
   reports:      ()        => withFallback('/reports', { reports: [] }),
   generateReport: (type, params = {}) => {
     const p = new URLSearchParams({ type, ...params });
@@ -256,6 +264,7 @@ export const api = {
 
   // ── Admin Stats ─────────────────────────────────────────────────────────────
   hrAdminStats:      (state, branch) => withFallback(`/hr/admin-stats?state=${encodeURIComponent(state || 'All')}&branch=${encodeURIComponent(branch || 'All')}`, null),
+  hrLeaves:          (start, end, state, branch) => request(`/hr/leaves?start=${start}&end=${end}&state=${encodeURIComponent(state || 'All')}&branch=${encodeURIComponent(branch || 'All')}`),
   hrSanctionedPosts: ()          => withFallback('/hr/sanctioned-posts', []),
   saveSanctionedPost:(data)      => request('/hr/sanctioned-posts', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -321,6 +330,14 @@ export const api = {
   },
   listWeeklyReviews: ()     => request('/tasks/weekly-review'),
   saveWeeklyReview:  (data) => request('/tasks/weekly-review', { method: 'POST', body: JSON.stringify(data) }),
+  listEvents: (state, branch) => {
+    const p = new URLSearchParams();
+    if (state  && state  !== 'All') p.set('state',  state);
+    if (branch && branch !== 'All') p.set('branch', branch);
+    const qs = p.toString();
+    return request(`/tasks/events${qs ? '?' + qs : ''}`);
+  },
+  saveEvent:         (data) => request('/tasks/events', { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Task Groups ──────────────────────────────────────────────────────────────
   // ── Task Bank ────────────────────────────────────────────────────────────────

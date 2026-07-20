@@ -799,7 +799,7 @@ function NewsroomTab({ topNews, planning, deskReview, rndIdeas }) {
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Editorial() {
-  const { t, state: globalState } = useApp();
+  const { t, state: globalState, branch: globalBranch } = useApp();
   const [activeTab, setActiveTab] = useState('feed');
   const [data,      setData]      = useState(null);
   const [loading,   setLoading]   = useState(true);
@@ -809,11 +809,11 @@ export default function Editorial() {
 
   const load = useCallback(() => {
     setLoading(true);
-    api.editorial(globalState, calMonth)
+    api.editorial(globalState, globalBranch, calMonth)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [globalState, calMonth]);
+  }, [globalState, globalBranch, calMonth]);
 
   useEffect(() => { load(); }, [load]);
 

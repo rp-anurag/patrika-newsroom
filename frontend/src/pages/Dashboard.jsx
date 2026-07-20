@@ -170,10 +170,12 @@ export default function Dashboard() {
       // Aggregate last 7 days: sum delay_minutes per edition, compute avg
       const map = {};
       (r.editions || []).forEach(ed => {
-        const vals = Object.values(ed.days || {}).map(day => day.delay_minutes).filter(m => m > 0);
-        if (!vals.length) return;
-        const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-        const max = Math.max(...vals);
+        const allVals  = Object.values(ed.days || {}).map(day => day.delay_minutes);
+        const lateVals = allVals.filter(m => m >= 5);
+        if (!lateVals.length) return;
+        // avg = sum of late delays ÷ total days (on-time = 0)
+        const avg = Math.round(lateVals.reduce((a, b) => a + b, 0) / allVals.length);
+        const max = Math.max(...lateVals);
         map[ed.code] = {
           edition_name: ed.edition_name,
           unit:         ed.unit,
@@ -198,6 +200,7 @@ export default function Dashboard() {
   const profilePie    = d.profilePie   || [];
   const editionDelays = d.editionDelays|| [];
   const qcTop5        = d.qcTop5       || [];
+  const top5Leaves    = d.top5Leaves   || [];
 
   const subtitle = [state !== 'All' ? state : null, branch !== 'All' ? branch : null]
     .filter(Boolean).join(' › ') || 'All States';
@@ -328,6 +331,44 @@ export default function Dashboard() {
                         <span className="text-sm font-semibold truncate">{p.name}</span>
                         <span className="text-xs font-bold tabular-nums flex-shrink-0 ml-2" style={{ color: '#dc2626' }}>
                           {p.total_mistakes} mistakes
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
+                          <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, background: rankColor }} />
+                        </div>
+                        <span className="text-xs flex-shrink-0" style={{ color: 'var(--muted)' }}>
+                          {p.branch}{p.story_type ? ` · ${p.story_type}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* ── Top 5 Employees on Leave — Last 7 Days ──────────────────────────── */}
+      <div className="mt-4">
+        <SectionCard title="Top 5 — Employees on Leave (Last 7 Days)">
+          {top5Leaves.length === 0 ? (
+            <p className="py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>No leave records in the last 7 days</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {top5Leaves.map((p, i) => {
+                const maxD = top5Leaves[0].leave_days || 1;
+                const pct  = Math.round((p.leave_days / maxD) * 100);
+                const rankColor = i === 0 ? '#d71920' : i === 1 ? '#ea580c' : i === 2 ? '#ca8a04' : 'var(--muted)';
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-xs font-bold w-4 flex-shrink-0 text-right" style={{ color: rankColor }}>{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-sm font-semibold truncate">{p.name}</span>
+                        <span className="text-xs font-bold tabular-nums flex-shrink-0 ml-2" style={{ color: rankColor }}>
+                          {p.leave_days}d leave
                         </span>
                       </div>
                       <div className="flex items-center gap-2">

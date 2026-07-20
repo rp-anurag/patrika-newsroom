@@ -54,7 +54,7 @@ function fmtAmt(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { min
 const BRANCH_COLORS = ['#059669','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#be185d','#65a30d'];
 
 export default function Correspondent() {
-  const { branch, isAdmin } = useApp();
+  const { branch, state: globalState, isAdmin } = useApp();
 
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
@@ -72,14 +72,14 @@ export default function Correspondent() {
   useEffect(() => {
     setLoading(true);
     setError('');
-    api.correspondent(branch, selectedMonth)
+    api.correspondent(globalState, branch, selectedMonth)
       .then(d => {
         setData(d);
         if (!selectedMonth && d.selectedMonth) setSelectedMonth(d.selectedMonth);
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [branch, selectedMonth]);
+  }, [globalState, branch, selectedMonth]);
 
   const alertFetch = (opts = {}) =>
     fetch('/api/correspondent/payment-alert', {

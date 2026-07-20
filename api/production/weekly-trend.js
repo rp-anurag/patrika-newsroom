@@ -144,7 +144,7 @@ module.exports = async function handler(req, res) {
       const releaseMs    = best ? best.ms : new Date(r.release_time).getTime();
       const release_time = best ? best.time : r.release_time;
       const delay_minutes = Math.min(Math.round((releaseMs - schedMs) / 60000), 149);
-      const status = delay_minutes <= 0 ? 'ontime' : delay_minutes <= 30 ? 'warn' : 'late';
+      const status = delay_minutes < 5 ? 'ontime' : delay_minutes <= 30 ? 'warn' : 'late';
 
       if (isHidden(sched.edition_name)) return;
 
@@ -173,11 +173,13 @@ module.exports = async function handler(req, res) {
     // ── Compute per-edition stats ──────────────────────────────────────────
     const editions = Object.values(editionMap).map(ed => {
       const dayVals     = Object.values(ed.days).map(d => d.delay_minutes);
-      const delayed     = dayVals.filter(d => d > 0).length;
+      const lateVals    = dayVals.filter(d => d >= 5);
+      const delayed     = lateVals.length;
+      // avg = sum of late delays (on-time = 0) ÷ total days
       const avgDelay    = dayVals.length
-        ? Math.round(dayVals.reduce((a, b) => a + b, 0) / dayVals.length)
+        ? Math.round(lateVals.reduce((a, b) => a + b, 0) / dayVals.length)
         : 0;
-      const maxDelay    = dayVals.length ? Math.max(...dayVals) : 0;
+      const maxDelay    = lateVals.length ? Math.max(...lateVals) : 0;
       return {
         ...ed,
         delayed_days: delayed,

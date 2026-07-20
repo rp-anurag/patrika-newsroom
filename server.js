@@ -249,6 +249,7 @@ app.all('/api/hr/grading-top',        h('./api/hr/grading-top'));
 app.all('/api/hr/grading',            h('./api/hr/grading'));
 app.all('/api/hr/sanctioned-posts',   h('./api/hr/sanctioned-posts'));
 app.all('/api/hr/admin-stats',        h('./api/hr/admin-stats'));
+app.all('/api/hr/leaves',             h('./api/hr/leaves'));
 app.all('/api/hr/appointments/:id',   h('./api/hr/appointments/[id]'));
 app.all('/api/hr/appointments',       h('./api/hr/appointments'));
 app.all('/api/hr/test-db',            h('./api/hr/test-db'));
@@ -299,6 +300,7 @@ app.all('/api/tasks/assignees',       h('./api/tasks/assignees'));   // before /
 app.all('/api/tasks/comments',        h('./api/tasks/comments'));
 app.all('/api/tasks/report',          h('./api/tasks/report'));
 app.all('/api/tasks/weekly-review',   h('./api/tasks/weekly-review'));
+app.all('/api/tasks/events',          h('./api/tasks/events'));
 app.all('/api/tasks/:id',             h('./api/tasks/[id]'));
 app.all('/api/tasks',                 h('./api/tasks'));
 

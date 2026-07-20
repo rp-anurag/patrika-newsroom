@@ -73,6 +73,7 @@ module.exports = async function handler(req, res) {
     visitExtra.push('pan_no IN (SELECT pan_no FROM `user` WHERE State = ?)'); visitParams.push(filterState);
   }
   if (filterBranch && filterBranch !== 'All') {
+    qcExtra.push('edition = ?');  qcParams.push(filterBranch);
     ecmsExtra.push('Pan_no IN (SELECT pan_no FROM `user` WHERE Branch = ?)');  ecmsParams.push(filterBranch);
     visitExtra.push('pan_no IN (SELECT pan_no FROM `user` WHERE Branch = ?)'); visitParams.push(filterBranch);
   }

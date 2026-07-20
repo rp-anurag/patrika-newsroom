@@ -16,9 +16,11 @@ module.exports = async function handler(req, res) {
   const { authError, user } = requireRole(req, ['Admin', 'State Head', 'Regional Editor']);
   if (authError) return res.status(authError.status).json({ error: authError.message });
 
-  const { branch, month } = req.query;
+  const { branch, month, state } = req.query;
 
   // Respect role locks
+  const effectiveState  = user.role === 'State Head' ? user.state :
+    (user.role === 'Regional Editor' ? user.state : (state && state !== 'All' ? state : null));
   const effectiveBranch = user.role === 'Regional Editor' ? user.branch : (branch && branch !== 'All' ? branch : null);
 
   // ── Available months ───────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ module.exports = async function handler(req, res) {
   // ── Correspondents (master) ────────────────────────────────────────────────
   const corrConds  = ['c.status = 1'];
   const corrParams = [];
+  if (effectiveState)  { corrConds.push('c.branch IN (SELECT DISTINCT Branch FROM `user` WHERE State = ?)'); corrParams.push(effectiveState); }
   if (effectiveBranch) { corrConds.push('c.branch = ?'); corrParams.push(effectiveBranch); }
 
   const correspondents = await query(

@@ -32,6 +32,7 @@ const REPORT_TYPES = [
   { type:'grading',   label:'PLI & Grading',         desc:'Employee grading scores (Work / Behaviour / Discipline / Interest) by month' },
   { type:'employees',     label:'Employee Directory',    desc:'Active employees with profile, state, branch and contact details' },
   { type:'press_release', label:'Press Release Report', desc:'Active employees working on press releases — count, editions and last activity date' },
+  { type:'leaves',        label:'Leave Register',        desc:'Employee leave records by type (CL/EL/SL/LWP etc.) for a date range.' },
 ];
 
 module.exports = async function handler(req, res) {
@@ -65,6 +66,7 @@ module.exports = async function handler(req, res) {
       case 'grading':   return await reportGrading  (req, res, filterState, filterBranch);
       case 'employees':     return await reportEmployees   (req, res, filterState, filterBranch);
       case 'press_release': return await reportPressRelease(req, res, filterState, filterBranch);
+      case 'leaves':        return await reportLeaves      (req, res, filterState, filterBranch);
       default: return res.status(400).json({ error: `Unknown report type: ${type}` });
     }
   } catch (err) {
@@ -348,6 +350,73 @@ async function reportPressRelease(req, res, filterState, filterBranch) {
       r.first_date ? String(r.first_date).slice(0, 10) : '',
       r.last_date  ? String(r.last_date).slice(0, 10)  : '',
     ]),
+  });
+}
+
+/* ── 8. Leave Register ───────────────────────────────────────────────────── */
+const PRESENT_TYPES = ['P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF'];
+const LEAVE_LABELS  = {
+  CL:'Casual Leave', EL:'Earned Leave', SL:'Sick Leave', ML:'Maternity Leave',
+  PL:'Privilege Leave', LWP:'Leave Without Pay', LW:'Leave Without Pay',
+  CO:'Compensatory Off', CH:'Compensatory Holiday', HL:'Half Day Leave', OL:'Other Leave',
+};
+
+function lastWeekMon() {
+  const d   = new Date();
+  const day = d.getDay(); // 0=Sun … 6=Sat
+  const back = day === 0 ? 13 : day + 6;
+  return new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
+}
+
+async function reportLeaves(req, res, filterState, filterBranch) {
+  const from = req.query.from || lastWeekMon();
+  const to   = req.query.to   || daysAgo(2);
+
+  const notIn  = PRESENT_TYPES.map(() => '?').join(',');
+  const where  = ['h.att_date BETWEEN ? AND ?', `UPPER(TRIM(h.att_type)) NOT IN (${notIn})`];
+  const params = [from, to, ...PRESENT_TYPES];
+  if (filterState)  { where.push('u.State = ?');  params.push(filterState); }
+  if (filterBranch) { where.push('u.Branch = ?'); params.push(filterBranch); }
+
+  // One row per employee — total leave days + per-type breakdown
+  const rows = await query(`
+    SELECT u.pan_no, u.EMPNAME AS name,
+           u.State AS state, u.Branch AS branch,
+           TRIM(u.Story_Type) AS profile,
+           u.emp_designation AS designation,
+           COUNT(*) AS total_days,
+           GROUP_CONCAT(UPPER(TRIM(h.att_type)) ORDER BY h.att_date SEPARATOR ',') AS all_types,
+           MIN(h.att_date) AS first_date,
+           MAX(h.att_date) AS last_date
+    FROM hrms_data h
+    JOIN \`user\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
+    WHERE ${where.join(' AND ')}
+      AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
+    GROUP BY u.pan_no, u.EMPNAME, u.State, u.Branch, u.Story_Type, u.emp_designation
+    ORDER BY total_days DESC, u.State, u.Branch, u.EMPNAME
+    LIMIT 5000
+  `, params);
+
+  return res.json({
+    type: 'leaves', from, to, total: rows.length,
+    columns: ['Pan No','Name','State','Branch','Profile','Designation','Total Leave Days','Leave Breakdown','First Date','Last Date'],
+    rows: rows.map(r => {
+      // Build per-type count string e.g. "CL×3, EL×1"
+      const typeCounts = {};
+      (r.all_types || '').split(',').forEach(t => { typeCounts[t] = (typeCounts[t] || 0) + 1; });
+      const breakdown = Object.entries(typeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([t, n]) => `${LEAVE_LABELS[t] || t}${n > 1 ? `×${n}` : ''}`)
+        .join(', ');
+      return [
+        r.pan_no||'', r.name||'', r.state||'', r.branch||'',
+        r.profile||'', r.designation||'',
+        Number(r.total_days||0),
+        breakdown,
+        r.first_date ? String(r.first_date).slice(0,10) : '',
+        r.last_date  ? String(r.last_date).slice(0,10)  : '',
+      ];
+    }),
   });
 }
 

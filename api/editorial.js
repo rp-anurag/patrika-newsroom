@@ -205,7 +205,7 @@ module.exports = async function handler(req, res) {
 
   // Role-locked state / branch
   let filterState  = req.query.state || '';
-  let filterBranch = '';
+  let filterBranch = (req.query.branch && req.query.branch !== 'All') ? req.query.branch : '';
   if (user.role === 'State Head'      && user.state)  filterState  = user.state;
   if (user.role === 'Regional Editor' && user.state)  filterState  = user.state;
   if (user.role === 'Regional Editor' && user.branch) filterBranch = user.branch;

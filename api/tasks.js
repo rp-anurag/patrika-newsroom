@@ -87,6 +87,12 @@ module.exports = async function handler(req, res) {
       conds.push(`(${sub.join(' OR ')})`);
     }
 
+    // Admin/Management can filter by global state/branch selector
+    if (user.role === 'Admin' || user.role === 'Management') {
+      if (req.query.state  && req.query.state  !== 'All') { conds.push('assigned_to_state = ?');  params.push(req.query.state); }
+      if (req.query.branch && req.query.branch !== 'All') { conds.push('assigned_to_branch = ?'); params.push(req.query.branch); }
+    }
+
     if (sf && sf !== 'all') { conds.push('status = ?'); params.push(sf); }
     if (group_id) { conds.push('group_id = ?'); params.push(group_id); }
 

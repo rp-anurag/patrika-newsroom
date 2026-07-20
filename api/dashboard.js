@@ -131,6 +131,7 @@ module.exports = async function handler(req, res) {
       schedRows, rajRows, mpcgRows,
       reporterTarget,
       qcTop5,
+      top5Leaves,
     ] = await Promise.all([
 
       // 1. Active employee count
@@ -229,10 +230,30 @@ module.exports = async function handler(req, res) {
                GROUP BY CAST(responsible_2 AS UNSIGNED)
              ) combined
              JOIN \`${TABLE}\` u ON u.id = combined.uid
+             WHERE 1=1
+               ${filterState  ? 'AND u.State = ?'  : ''}
+               ${filterBranch ? 'AND u.Branch = ?' : ''}
              GROUP BY u.id, u.EMPNAME, u.Branch, u.Story_Type
              ORDER BY total_mistakes DESC
              LIMIT 5`,
-             [trend15Str, ydayStr, ...qcParams, trend15Str, ydayStr, ...qcParams]).catch(e => { console.error('[dashboard] qcTop5:', e.message); return []; }),
+             [trend15Str, ydayStr, ...qcParams, trend15Str, ydayStr, ...qcParams,
+              ...(filterState  ? [filterState]  : []),
+              ...(filterBranch ? [filterBranch] : [])]).catch(e => { console.error('[dashboard] qcTop5:', e.message); return []; }),
+
+      // 15. Top 5 persons on leave — last 7 days (excludes P/WFH/H/WO/A/etc.)
+      query(`SELECT u.EMPNAME AS name, u.Branch AS branch, u.Story_Type AS story_type,
+                    COUNT(*) AS leave_days
+             FROM hrms_data h
+             JOIN \`${TABLE}\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
+             WHERE h.att_date BETWEEN ? AND ?
+               AND UPPER(TRIM(h.att_type)) NOT IN ('P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF')
+               AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
+               ${filterState  ? 'AND u.State = ?'  : ''}
+               ${filterBranch ? 'AND u.Branch = ?' : ''}
+             GROUP BY u.pan_no, u.EMPNAME, u.Branch, u.Story_Type
+             ORDER BY leave_days DESC
+             LIMIT 5`,
+             [trend7Str, ydayStr, ...(filterState ? [filterState] : []), ...(filterBranch ? [filterBranch] : [])]).catch(e => { console.error('[dashboard] top5Leaves:', e.message); return []; }),
     ]);
 
     // ── Compute edition delays ────────────────────────────────────────────────
@@ -321,8 +342,16 @@ module.exports = async function handler(req, res) {
     }));
 
 
+    const top5LeavesOut = (top5Leaves || []).map(r => ({
+      name:       r.name || 'Unknown',
+      branch:     r.branch || '',
+      story_type: r.story_type || '',
+      leave_days: Number(r.leave_days || 0),
+    }));
+
     return res.json({
       qcTop5: qcTop5Out,
+      top5Leaves: top5LeavesOut,
       kpis: {
         employees:       Number(empRows[0]?.cnt    || 0),
         stories:         Number(storiesYday[0]?.stories || 0),

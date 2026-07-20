@@ -53,20 +53,30 @@ module.exports = async function handler(req, res) {
   const { authError, user } = requireRole(req, ['Admin', 'State Head', 'Regional Editor', 'Management', 'Legal']);
   if (authError) return res.status(authError.status).json({ error: authError.message });
 
-  // ── Role scope: State Head → own state; Regional Editor → own state+branch ──
-  const fState  = (user.role === 'State Head' || user.role === 'Regional Editor') ? (user.state  || '') : '';
-  const fBranch = (user.role === 'Regional Editor')                               ? (user.branch || '') : '';
+  // ── Role scope: role locks take priority; Admin/Mgmt can pass global filters ─
+  let fState  = (user.role === 'State Head' || user.role === 'Regional Editor') ? (user.state  || '') : '';
+  let fBranch = (user.role === 'Regional Editor')                               ? (user.branch || '') : '';
+  if (user.role === 'Admin' || user.role === 'Management') {
+    if (req.query.state  && req.query.state  !== 'All') fState  = req.query.state;
+    if (req.query.branch && req.query.branch !== 'All') fBranch = req.query.branch;
+  }
   const STATE_NORM = { rajasthan:'raj', raj:'raj', mp:'mp', 'madhya pradesh':'mp', cg:'cg', chhattisgarh:'cg', metro:'metro' };
   const normState = s => STATE_NORM[(s||'').toLowerCase().trim()] || (s||'').toLowerCase().trim();
 
   const toIST    = ms => new Date(ms + 5.5 * 3600000).toISOString().slice(0, 10);
   const todayStr = toIST(Date.now());
   const ydayStr  = toIST(Date.now() - 864e5);
+  const d2Str    = toIST(Date.now() - 2 * 864e5);
   const d7Str    = toIST(Date.now() - 8 * 864e5);
+  // last-week Monday (IST)
+  const istDay   = new Date(Date.now() + 5.5 * 3600000).getDay();
+  const lwMonStr = toIST(Date.now() - (istDay === 0 ? 13 : istDay + 6) * 864e5);
   const ddmmyyyy = s => { const [Y, M, D] = s.split('-'); return D + M + Y; };
   const nowLabel = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(11, 16);
 
   try {
+    const LEAVE_EXCL = `'P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF'`;
+
     const [
       schedRows, rajRows, mpcgRows,
       qcYday, qcAvg,
@@ -75,6 +85,10 @@ module.exports = async function handler(req, res) {
       pendingPlans,
       openFeedback,
       empRows,
+      leaveTodayRows,
+      eventPendingRows,
+      birthdayRows,
+      longAbsentRows,
     ] = await Promise.all([
       query('SELECT UPPER(file_name) AS code, unit, state, edition_name, schedule_time FROM page_schedule_time').catch(() => []),
       query(`SELECT UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(input_file,'-',2),'-',-1)) AS code,
@@ -125,6 +139,40 @@ module.exports = async function handler(req, res) {
              WHERE is_emp_working = 1 AND DOB IS NOT NULL AND DOB != ''
              ${fState ? 'AND State = ?' : ''} ${fBranch ? 'AND Branch = ?' : ''}`,
              [...(fState ? [fState] : []), ...(fBranch ? [fBranch] : [])]).catch(() => []),
+
+      // 8. Employees on leave — last week Mon to d-2 (unique per branch)
+      query(`SELECT u.Branch AS branch, COUNT(DISTINCT u.pan_no) AS cnt
+             FROM hrms_data h
+             JOIN \`user\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
+             WHERE h.att_date BETWEEN ? AND ? AND UPPER(TRIM(h.att_type)) NOT IN (${LEAVE_EXCL})
+               AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
+               ${fState ? 'AND u.State = ?' : ''} ${fBranch ? 'AND u.Branch = ?' : ''}
+             GROUP BY u.Branch ORDER BY cnt DESC LIMIT 5`,
+             [lwMonStr, d2Str, ...(fState ? [fState] : []), ...(fBranch ? [fBranch] : [])]).catch(() => []),
+
+      // 9. Major event plans pending review
+      query(`SELECT COUNT(*) AS cnt FROM major_event_plans WHERE status = 'submitted'
+             ${fState ? 'AND state = ?' : ''} ${fBranch ? 'AND branch = ?' : ''}`,
+             [...(fState ? [fState] : []), ...(fBranch ? [fBranch] : [])]).catch(() => [{ cnt: 0 }]),
+
+      // 10. Birthdays today
+      query(`SELECT EMPNAME AS name, Branch AS branch FROM \`user\`
+             WHERE DATE_FORMAT(DOB, '%m-%d') = DATE_FORMAT(CURDATE(), '%m-%d')
+               AND (is_emp_working = 1 OR Status IN ('Working','Active'))
+               ${fState ? 'AND State = ?' : ''} ${fBranch ? 'AND Branch = ?' : ''}
+             ORDER BY Branch, EMPNAME`,
+             [...(fState ? [fState] : []), ...(fBranch ? [fBranch] : [])]).catch(() => []),
+
+      // 11. Consecutive absence: on leave BOTH yesterday and day-before
+      query(`SELECT u.EMPNAME AS name, u.Branch AS branch, COUNT(DISTINCT h.att_date) AS days
+             FROM hrms_data h
+             JOIN \`user\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
+             WHERE h.att_date IN (?, ?) AND UPPER(TRIM(h.att_type)) NOT IN (${LEAVE_EXCL})
+               AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
+               ${fState ? 'AND u.State = ?' : ''} ${fBranch ? 'AND u.Branch = ?' : ''}
+             GROUP BY u.pan_no, u.EMPNAME, u.Branch HAVING days >= 2
+             ORDER BY u.Branch, u.EMPNAME LIMIT 10`,
+             [ydayStr, toIST(Date.now() - 2 * 864e5), ...(fState ? [fState] : []), ...(fBranch ? [fBranch] : [])]).catch(() => []),
     ]);
 
     const alerts = [];
@@ -210,6 +258,39 @@ module.exports = async function handler(req, res) {
       push('Retirement Due', 'low',
         `${retiring.length} employee${retiring.length > 1 ? 's' : ''} retiring within 60 days: ${names}`,
         '/hr', retiring.length);
+    }
+
+    // ── 8. Staff on leave (last week Mon → d-2) ──────────────────────────────
+    const totalOnLeave = leaveTodayRows.reduce((s, b) => s + Number(b.cnt), 0);
+    if (totalOnLeave >= 3) {
+      const top = leaveTodayRows.slice(0, 3).map(b => `${b.branch} (${b.cnt})`).join(', ');
+      push('Staff On Leave', 'med',
+        `${totalOnLeave} unique employees on leave (${lwMonStr} → ${d2Str}) — ${top}`,
+        '/hr', totalOnLeave);
+    }
+
+    // ── 9. Event plans pending review ────────────────────────────────────────
+    const ep = Number(eventPendingRows[0]?.cnt || 0);
+    if (ep > 0) {
+      push('Event Plan Pending', 'med',
+        `${ep} major event plan${ep > 1 ? 's' : ''} submitted — awaiting State Head review`,
+        '/tasks?tab=events', ep);
+    }
+
+    // ── 10. Birthdays today ───────────────────────────────────────────────────
+    if (birthdayRows.length) {
+      const names = birthdayRows.slice(0, 3).map(e => `${e.name} (${e.branch})`).join(', ');
+      push('Birthday Today', 'low',
+        `${birthdayRows.length} team member${birthdayRows.length > 1 ? 's have' : ' has'} a birthday today — ${names}`,
+        '/hr', birthdayRows.length);
+    }
+
+    // ── 11. Consecutive absence (2+ days) ────────────────────────────────────
+    if (longAbsentRows.length) {
+      const names = longAbsentRows.slice(0, 3).map(e => `${e.name} (${e.branch})`).join(', ');
+      push('Extended Absence', 'high',
+        `${longAbsentRows.length} reporter${longAbsentRows.length > 1 ? 's' : ''} absent 2+ consecutive days: ${names}`,
+        '/hr', longAbsentRows.length);
     }
 
     // All-clear entry so the feed is never empty

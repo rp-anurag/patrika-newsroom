@@ -4,13 +4,36 @@ import {
   Bell, MessageCircle, Mail, Smartphone, Send,
   CheckCircle2, XCircle, Loader2, Settings2, ChevronDown, ChevronUp,
   Users, Search, X, RefreshCw, ExternalLink,
+  Clock, VolumeX, ClipboardX, TrendingUp, FileCheck,
+  UserMinus, UserX, CalendarDays, Gift, ShieldCheck,
+  AlertTriangle, Zap, CalendarClock, MessageSquare,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api } from '../api/client.js';
-import { PageHeader, SectionCard, Badge } from '../components/UI.jsx';
+import { PageHeader, SectionCard } from '../components/UI.jsx';
 
-// ── Severity helpers ──────────────────────────────────────────────────────────
-const SEV_EMOJI = { high: '🔴', med: '🟡', low: '🟢' };
+// ── Per-type visual metadata ──────────────────────────────────────────────────
+const ALERT_META = {
+  'Edition Delay':      { Icon: Clock,          color: '#dc2626', bg: '#fef2f2' },
+  'Silent Branch':      { Icon: VolumeX,        color: '#dc2626', bg: '#fef2f2' },
+  'Overdue Tasks':      { Icon: ClipboardX,     color: '#dc2626', bg: '#fef2f2' },
+  'Extended Absence':   { Icon: UserX,          color: '#dc2626', bg: '#fef2f2' },
+  'QC Spike':           { Icon: TrendingUp,     color: '#ea580c', bg: '#fff7ed' },
+  'Plan Review Pending':{ Icon: FileCheck,      color: '#d97706', bg: '#fffbeb' },
+  'Feedback Pending':   { Icon: MessageSquare,  color: '#d97706', bg: '#fffbeb' },
+  'Staff On Leave':     { Icon: CalendarDays,   color: '#d97706', bg: '#fffbeb' },
+  'Event Plan Pending': { Icon: CalendarClock,  color: '#7c3aed', bg: '#f5f3ff' },
+  'Retirement Due':     { Icon: UserMinus,      color: '#2563eb', bg: '#eff6ff' },
+  'Birthday Today':     { Icon: Gift,           color: '#059669', bg: '#ecfdf5' },
+  'All Clear':          { Icon: ShieldCheck,    color: '#059669', bg: '#ecfdf5' },
+};
+const DEFAULT_META = { Icon: AlertTriangle, color: '#6b7280', bg: 'var(--bg)' };
+
+const SEV_CFG = {
+  high: { label: 'Critical', color: '#dc2626', bg: '#fef2f2', ring: '#fca5a5' },
+  med:  { label: 'Warning',  color: '#d97706', bg: '#fffbeb', ring: '#fcd34d' },
+  low:  { label: 'Info',     color: '#059669', bg: '#ecfdf5', ring: '#6ee7b7' },
+};
 
 // ── Channel pills (display only) ──────────────────────────────────────────────
 const CHANNELS = [
@@ -30,7 +53,7 @@ function useTgStatus() {
 }
 
 export default function Alerts() {
-  const { t } = useApp();
+  const { t, state: globalState, branch: globalBranch } = useApp();
   const navigate = useNavigate();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -41,11 +64,11 @@ export default function Alerts() {
 
   const loadAlerts = useCallback(() => {
     setAlertsLoading(true);
-    api.alertsLive()
+    api.alertsLive(globalState, globalBranch)
       .then(r => { setAlerts(r.alerts || []); setAlertsAt(r.generatedAt); })
       .catch(() => setAlerts([]))
       .finally(() => setAlertsLoading(false));
-  }, []);
+  }, [globalState, globalBranch]);
   const [tgConfig, setTgConfig] = useState({ configured: false, chat_id: '' });
   const [tgLogs,   setTgLogs]   = useState([]);
 
@@ -79,9 +102,11 @@ export default function Alerts() {
   const [emailError,     setEmailError]     = useState('');
   const [emailLogs,      setEmailLogs]      = useState([]);
 
-  // ── Load data on mount ─────────────────────────────────────────────────────
+  // ── Load alerts whenever global state/branch changes ──────────────────────
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
+
+  // ── Load config once on mount ──────────────────────────────────────────────
   useEffect(() => {
-    loadAlerts();
     api.telegramConfig().then((cfg) => {
       setTgConfig(cfg);
       setChatIdInput(cfg.chat_id || '');
@@ -188,7 +213,13 @@ export default function Alerts() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
-      <PageHeader title={t('nav.alerts')} subtitle="Real-time alert engine · multi-channel delivery" />
+      <PageHeader title={t('nav.alerts')}
+        subtitle={[
+          'Real-time alert engine · multi-channel delivery',
+          globalState  && globalState  !== 'All' ? globalState  : null,
+          globalBranch && globalBranch !== 'All' ? globalBranch : null,
+        ].filter(Boolean).join(' · ')}
+      />
 
       {/* Channel pills */}
       <div className="mb-4 flex flex-wrap gap-2">
@@ -449,95 +480,158 @@ SMTP_FROM=Patrika Newsroom <you@gmail.com>   # optional`}</pre>
         )}
       </SectionCard>
 
-      {/* ── Live Alerts (computed from real data) ────────────────────────────── */}
-      <SectionCard title={
-        <span className="flex items-center gap-2 flex-wrap">
-          <Bell size={15} /> Alert Center
-          {!alertsLoading && (
-            <>
-              {['high', 'med', 'low'].map(s => {
-                const n = alerts.filter(a => a.sev === s).length;
-                if (!n) return null;
-                return (
-                  <span key={s} className="text-xs font-bold px-2 py-0.5 rounded-full"
-                    style={{
-                      background: s === 'high' ? '#fee2e2' : s === 'med' ? '#fef3c7' : '#dcfce7',
-                      color:      s === 'high' ? '#b91c1c' : s === 'med' ? '#92400e' : '#166534',
-                    }}>
-                    {SEV_EMOJI[s]} {n}
-                  </span>
-                );
-              })}
-            </>
-          )}
-        </span>
-      } action={
-        <div className="flex items-center gap-2">
-          {alertsAt && (
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>
-              updated {String(alertsAt).slice(11, 16)} UTC
-            </span>
-          )}
-          <button className="btn-ghost p-1.5" title="Refresh" onClick={loadAlerts}>
-            <RefreshCw size={14} className={alertsLoading ? 'animate-spin' : ''} />
+      {/* ── Alert Center ─────────────────────────────────────────────────────── */}
+      <div className="card overflow-hidden">
+        {/* Header bar */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ background: '#d71920', borderRadius: 10, padding: '6px 8px', display: 'flex', alignItems: 'center' }}>
+              <Bell size={16} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>Alert Center</div>
+              {alertsAt && <div style={{ fontSize: 11, color: 'var(--muted)' }}>updated {String(alertsAt).slice(11, 16)} UTC</div>}
+            </div>
+          </div>
+          <button className="btn-ghost flex items-center gap-1.5 text-xs" onClick={loadAlerts} style={{ padding: '6px 10px' }}>
+            <RefreshCw size={13} className={alertsLoading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
-      }>
-        {/* Severity filter */}
-        <div className="flex gap-2 mb-3 flex-wrap">
-          {[['all', 'All'], ['high', '🔴 Critical'], ['med', '🟡 Warning'], ['low', '🟢 Info']].map(([key, label]) => (
-            <button key={key} onClick={() => setSevFilter(key)}
-              className="px-3 py-1 rounded-full text-xs font-semibold transition"
-              style={{
-                background: sevFilter === key ? 'var(--brand)' : 'var(--bg)',
-                color:      sevFilter === key ? '#fff' : 'var(--text)',
-                border: '1px solid var(--border)', cursor: 'pointer',
-              }}>
-              {label}
-            </button>
-          ))}
+
+        {/* Severity stat tiles */}
+        {!alertsLoading && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderBottom: '1px solid var(--border)' }}>
+            {Object.entries(SEV_CFG).map(([sev, cfg], i) => {
+              const n = alerts.filter(a => a.sev === sev).length;
+              const active = sevFilter === sev;
+              return (
+                <button key={sev} onClick={() => setSevFilter(active ? 'all' : sev)}
+                  style={{
+                    padding: '14px 8px', textAlign: 'center', cursor: 'pointer', border: 'none',
+                    borderRight: i < 2 ? '1px solid var(--border)' : 'none',
+                    background: active ? cfg.color : 'var(--surface)',
+                    transition: 'background 0.15s',
+                  }}>
+                  <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1, color: active ? '#fff' : cfg.color }}>{n}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, color: active ? 'rgba(255,255,255,0.8)' : cfg.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {cfg.label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Severity filter pills */}
+        <div style={{ padding: '10px 16px', display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+          <button onClick={() => setSevFilter('all')}
+            style={{ padding: '3px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid var(--border)',
+              background: sevFilter === 'all' ? 'var(--brand)' : 'transparent', color: sevFilter === 'all' ? '#fff' : 'var(--fg)' }}>
+            All ({alerts.length})
+          </button>
+          {Object.entries(SEV_CFG).map(([sev, cfg]) => {
+            const n = alerts.filter(a => a.sev === sev).length;
+            if (!n) return null;
+            return (
+              <button key={sev} onClick={() => setSevFilter(sevFilter === sev ? 'all' : sev)}
+                style={{ padding: '3px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  background: sevFilter === sev ? cfg.color : cfg.bg,
+                  color: sevFilter === sev ? '#fff' : cfg.color,
+                  border: `1px solid ${cfg.ring}` }}>
+                {cfg.label} · {n}
+              </button>
+            );
+          })}
         </div>
 
-        {alertsLoading ? (
-          <div className="flex items-center justify-center py-10 gap-2" style={{ color: 'var(--muted)' }}>
-            <Loader2 size={18} className="animate-spin" /> Scanning newsroom data…
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {alerts.filter(a => sevFilter === 'all' || a.sev === sevFilter).map((a) => (
-              <div key={a.id} className="flex items-start gap-3 rounded-lg p-3"
-                style={{
-                  background: 'var(--bg)',
-                  borderLeft: `4px solid ${a.sev === 'high' ? '#dc2626' : a.sev === 'med' ? '#f59e0b' : '#16a34a'}`,
+        {/* Alert list */}
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {alertsLoading ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <Loader2 size={18} className="animate-spin" /> Scanning newsroom data…
+            </div>
+          ) : alerts.filter(a => sevFilter === 'all' || a.sev === sevFilter).length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--muted)', fontSize: 14 }}>
+              No alerts in this category.
+            </div>
+          ) : alerts.filter(a => sevFilter === 'all' || a.sev === sevFilter).map(a => {
+            const meta  = ALERT_META[a.type] || DEFAULT_META;
+            const scfg  = SEV_CFG[a.sev] || SEV_CFG.low;
+            const isPulse = a.sev === 'high';
+            return (
+              <div key={a.id} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
+                borderRadius: 12, background: meta.bg,
+                border: `1px solid ${meta.color}28`,
+                borderLeft: `4px solid ${meta.color}`,
+                position: 'relative', overflow: 'hidden',
+              }}>
+                {/* Animated glow strip for critical */}
+                {isPulse && (
+                  <div style={{
+                    position: 'absolute', top: 0, left: 0, width: '100%', height: 2,
+                    background: `linear-gradient(90deg, ${meta.color}, transparent)`,
+                    opacity: 0.6,
+                  }} />
+                )}
+
+                {/* Icon */}
+                <div style={{
+                  flexShrink: 0, width: 38, height: 38, borderRadius: 10,
+                  background: meta.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: `1px solid ${meta.color}30`,
                 }}>
-                <Badge tone={a.sev === 'high' ? 'high' : a.sev === 'med' ? 'med' : 'low'}>{a.type}</Badge>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">{a.text}</div>
-                  <div className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>{a.time} IST</div>
+                  <meta.Icon size={18} color={meta.color} />
                 </div>
-                <div className="flex-shrink-0 flex items-center gap-1.5 pt-0.5">
+
+                {/* Content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: meta.color, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                      {a.type}
+                    </span>
+                    {a.count != null && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 9999,
+                        background: meta.color, color: '#fff',
+                      }}>
+                        {a.count}
+                      </span>
+                    )}
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 9999,
+                      background: scfg.bg, color: scfg.color, border: `1px solid ${scfg.ring}`, textTransform: 'uppercase',
+                    }}>
+                      {scfg.label}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55, margin: 0 }}>{a.text}</p>
+                  <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{a.time} IST</p>
+                </div>
+
+                {/* Actions */}
+                <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-end' }}>
                   {a.link && a.link !== '/' && (
-                    <button
-                      title="Open related tab"
-                      onClick={() => navigate(a.link)}
-                      className="flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold transition hover:opacity-75"
-                      style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--brand)' }}>
+                    <button onClick={() => navigate(a.link)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                        borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        background: meta.color, color: '#fff', border: 'none',
+                      }}>
                       <ExternalLink size={11} /> Open
                     </button>
                   )}
                   <TgButton alert={a} />
                 </div>
               </div>
-            ))}
-            {alerts.filter(a => sevFilter === 'all' || a.sev === sevFilter).length === 0 && (
-              <p className="py-8 text-center text-sm" style={{ color: 'var(--muted)' }}>No alerts in this category.</p>
-            )}
-          </div>
-        )}
-        <p className="mt-3 text-xs" style={{ color: 'var(--muted)' }}>
-          Live checks: edition delays (30+ min) · silent branches (zero stories) · overdue tasks · QC spikes · plans awaiting review · open high-priority feedback · retirements within 60 days.
-        </p>
-      </SectionCard>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: '8px 16px', fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>
+          Checks: edition delays · silent branches · overdue tasks · QC spikes · plan review · open feedback · retirements · staff on leave · event plans · birthdays · extended absences
+        </div>
+      </div>
 
       {/* ── Email Send History ────────────────────────────────────────────────── */}
       {emailLogs.length > 0 && (

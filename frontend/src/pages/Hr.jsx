@@ -9,6 +9,7 @@ import {
   Building2, Save, Loader2, Download, Plus, Upload, CheckCircle2,
   Clock, Star, BarChart2, ShieldCheck, FileText, Briefcase, Trash2,
   ChevronDown, RefreshCw, Camera, PenLine, Monitor, Newspaper,
+  CalendarDays, ChevronRight, AlertCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api } from '../api/client.js';
@@ -1437,6 +1438,195 @@ function CorrespondentTab() {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+// LEAVE REGISTER — used inside AdminTab
+const LEAVE_TYPE_COLORS = {
+  CL: '#3b82f6', EL: '#10b981', SL: '#8b5cf6', ML: '#ec4899',
+  PL: '#06b6d4', LWP: '#d71920', LW: '#d71920', CO: '#f97316',
+  CH: '#C9A227', RH: '#84cc16', WOP: '#64748b', A: '#ef4444',
+};
+const leaveColor = type => LEAVE_TYPE_COLORS[type] || '#94a3b8';
+const LEAVE_LABELS = {
+  CL: 'Casual Leave', EL: 'Earned Leave', SL: 'Sick Leave', ML: 'Medical Leave',
+  PL: 'Privilege Leave', LWP: 'Leave Without Pay', LW: 'Leave W/Pay',
+  CO: 'Comp Off', CH: 'Compensatory Holiday', RH: 'Restricted Holiday',
+  WOP: 'Without Pay', A: 'Absent',
+};
+
+function toISTDate(ms) { return new Date(ms + 5.5 * 3600000).toISOString().slice(0, 10); }
+function startOfWeekMon(d) { const dt = new Date(d + 'T12:00:00'), day = dt.getDay(); dt.setDate(dt.getDate() - (day === 0 ? 6 : day - 1)); return dt.toISOString().slice(0, 10); }
+function addDaysStr(d, n) { const dt = new Date(d + 'T12:00:00'); dt.setDate(dt.getDate() + n); return dt.toISOString().slice(0, 10); }
+
+const QUICK_RANGES = [
+  { label: 'Last Week',  key: 'lastweek',  range: () => { const mon = startOfWeekMon(toISTDate(Date.now())); const prev = addDaysStr(mon, -7); return { start: prev, end: toISTDate(Date.now() - 2 * 864e5) }; } },
+  { label: 'This Month', key: 'thismonth', range: () => { const t = toISTDate(Date.now()); return { start: t.slice(0, 7) + '-01', end: toISTDate(Date.now() - 2 * 864e5) }; } },
+  { label: 'Last Month', key: 'lastmonth', range: () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), last = new Date(y, d.getMonth() + 1, 0).getDate(); return { start: `${y}-${m}-01`, end: `${y}-${m}-${String(last).padStart(2,'0')}` }; } },
+];
+
+function LeavesSection({ state, branch }) {
+  const [activeQuick, setActiveQuick] = useState('lastweek');
+  const [dateRange,   setDateRange]   = useState(() => QUICK_RANGES.find(r => r.key === 'lastweek').range());
+  const [data,        setData]        = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState('');
+  const [expandedPan, setExpandedPan] = useState(null);
+  const [search,      setSearch]      = useState('');
+
+  const load = useCallback((start, end) => {
+    setLoading(true); setError('');
+    api.hrLeaves(start, end, state, branch)
+      .then(d => { setData(d); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [state, branch]);
+
+  useEffect(() => { load(dateRange.start, dateRange.end); }, [load]);
+
+  function applyQuick(key) {
+    const r = QUICK_RANGES.find(q => q.key === key).range();
+    setActiveQuick(key); setDateRange(r); load(r.start, r.end);
+  }
+  function applyCustom() { setActiveQuick(null); load(dateRange.start, dateRange.end); }
+
+  function downloadExcelLeaves() {
+    if (!data?.employees?.length) return;
+    const rows = [];
+    data.employees.forEach(emp => {
+      emp.leaves.forEach(lv => {
+        rows.push({ Name: emp.name, Branch: emp.branch, State: emp.state,
+          Designation: emp.designation || emp.story_type,
+          Date: lv.date, 'Leave Type': lv.type, Description: LEAVE_LABELS[lv.type] || lv.type });
+      });
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = Object.keys(rows[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Leave Register');
+    XLSX.writeFile(wb, `leave_register_${data.start}_to_${data.end}.xlsx`);
+  }
+
+  const visibleEmps = useMemo(() => {
+    if (!data?.employees) return [];
+    const q = search.toLowerCase();
+    return q ? data.employees.filter(e => e.name.toLowerCase().includes(q) || e.branch.toLowerCase().includes(q)) : data.employees;
+  }, [data, search]);
+
+  const fmt = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  const fmtDay = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) : '';
+
+  return (
+    <SectionCard
+      title="Leave Register — Person Wise"
+      action={
+        <button onClick={downloadExcelLeaves} className="btn-ghost flex items-center gap-1.5 text-sm" disabled={!data?.employees?.length}>
+          <Download size={14} /> Excel
+        </button>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {QUICK_RANGES.map(q => (
+          <button key={q.key} onClick={() => applyQuick(q.key)}
+            className="px-3 py-1 rounded-full text-xs font-medium transition"
+            style={{ background: activeQuick === q.key ? 'var(--brand)' : 'var(--bg)', color: activeQuick === q.key ? '#fff' : 'var(--fg)', border: '1px solid var(--border)' }}>
+            {q.label}
+          </button>
+        ))}
+        <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+          <CalendarDays size={14} style={{ color: 'var(--muted)' }} />
+          <input type="date" className="input text-xs py-1 px-2" style={{ width: 130 }}
+            value={dateRange.start}
+            onChange={e => { setDateRange(r => ({ ...r, start: e.target.value })); setActiveQuick(null); }} />
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>to</span>
+          <input type="date" className="input text-xs py-1 px-2" style={{ width: 130 }}
+            value={dateRange.end}
+            onChange={e => { setDateRange(r => ({ ...r, end: e.target.value })); setActiveQuick(null); }} />
+          <button onClick={applyCustom} className="btn-primary text-xs py-1 px-3">Go</button>
+        </div>
+      </div>
+
+      {data?.summary && (
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="rounded-xl px-4 py-2.5 text-center" style={{ background: 'var(--bg)', border: '1px solid var(--border)', minWidth: 90 }}>
+            <div className="text-2xl font-bold" style={{ color: 'var(--brand)' }}>{data.summary.totalDays}</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Total Leave Days</div>
+          </div>
+          <div className="rounded-xl px-4 py-2.5 text-center" style={{ background: 'var(--bg)', border: '1px solid var(--border)', minWidth: 90 }}>
+            <div className="text-2xl font-bold">{data.summary.uniqueEmps}</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Employees on Leave</div>
+          </div>
+          {Object.entries(data.summary.byType || {}).sort((a, b) => b[1] - a[1]).map(([type, cnt]) => (
+            <div key={type} className="rounded-xl px-3 py-2.5 text-center" style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderLeft: `3px solid ${leaveColor(type)}` }}>
+              <div className="text-xl font-bold">{cnt}</div>
+              <div className="text-xs font-semibold mt-0.5" style={{ color: leaveColor(type) }}>{LEAVE_LABELS[type] || type}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data && <p className="text-xs mb-3" style={{ color: 'var(--muted)' }}>Period: {fmt(data.start)} to {fmt(data.end)}</p>}
+
+      <input className="input w-full mb-3 text-sm" placeholder="Search by name or branch…"
+        value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loading && <div className="flex justify-center py-10 gap-2" style={{ color: 'var(--muted)' }}><Loader2 size={18} className="animate-spin" /> Loading leave data…</div>}
+      {error && <div className="flex items-center gap-2 py-4 text-sm" style={{ color: '#d71920' }}><AlertCircle size={16} /> {error}</div>}
+      {!loading && !error && data && visibleEmps.length === 0 && (
+        <div className="py-8 text-center text-sm" style={{ color: 'var(--muted)' }}>
+          {search ? 'No employees match your search.' : 'No leave records found for this period.'}
+        </div>
+      )}
+
+      {!loading && !error && visibleEmps.length > 0 && (
+        <div className="space-y-2">
+          {visibleEmps.map(emp => {
+            const isOpen = expandedPan === emp.pan;
+            return (
+              <div key={emp.pan} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left transition hover:bg-black/5 dark:hover:bg-white/5"
+                  onClick={() => setExpandedPan(isOpen ? null : emp.pan)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm">{emp.name}</div>
+                    <div className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {emp.designation || emp.story_type}{emp.branch ? ` · ${emp.branch}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 justify-end" style={{ maxWidth: 260 }}>
+                    {Object.entries(emp.byType).sort((a, b) => b[1] - a[1]).map(([type, cnt]) => (
+                      <span key={type} className="px-2 py-0.5 rounded-full text-xs font-semibold text-white"
+                        style={{ background: leaveColor(type) }}>
+                        {type} x{cnt}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-sm font-bold ml-2 shrink-0" style={{ color: 'var(--brand)' }}>{emp.leaves.length}d</div>
+                  <ChevronRight size={16} style={{ color: 'var(--muted)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                </button>
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-2" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+                    <div className="flex flex-wrap gap-2">
+                      {emp.leaves.map((lv, i) => (
+                        <div key={i} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+                          style={{ background: leaveColor(lv.type) + '18', border: `1px solid ${leaveColor(lv.type)}40` }}>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: leaveColor(lv.type) }} />
+                          <span className="font-medium">{fmtDay(lv.date)}</span>
+                          <span className="font-bold ml-0.5" style={{ color: leaveColor(lv.type) }}>{lv.type}</span>
+                          <span style={{ color: 'var(--muted)' }}>– {LEAVE_LABELS[lv.type] || lv.type}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+
 // ADMIN TAB
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function AdminTab({ emps, canEditHr }) {
@@ -1500,6 +1690,9 @@ function AdminTab({ emps, canEditHr }) {
 
   return (
     <div className="space-y-4">
+      {/* Leave Register */}
+      <LeavesSection state={state} branch={branch} />
+
       {/* Retirement Overview */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         {Object.entries(RET_VIEWS).map(([key, v]) => (

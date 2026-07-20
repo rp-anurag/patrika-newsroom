@@ -623,12 +623,13 @@ export default function Production() {
 
   // Region-filtered summary
   const summary = useMemo(() => {
-    const total    = editions.length;
-    const onTime   = editions.filter(e => e.status === 'ontime').length;
-    const delayed  = editions.filter(e => e.status !== 'ontime').length;
-    const delays   = editions.map(e => e.delay_minutes).filter(d => d > 0);
-    const avgDelay = delays.length ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) : 0;
-    const maxDelay = delays.length ? Math.max(...delays) : 0;
+    const total      = editions.length;
+    const onTime     = editions.filter(e => e.status === 'ontime').length;
+    const delayed    = editions.filter(e => e.status !== 'ontime').length;
+    const lateDelays = editions.map(e => e.delay_minutes).filter(d => d >= 5);
+    // avg = sum of late delays ÷ total editions (on-time = 0)
+    const avgDelay   = total ? Math.round(lateDelays.reduce((a, b) => a + b, 0) / total) : 0;
+    const maxDelay   = lateDelays.length ? Math.max(...lateDelays) : 0;
     const fmt = (m) => {
       const h = Math.floor(m / 60), mn = m % 60;
       return `${String(h).padStart(2,'0')}:${String(mn).padStart(2,'0')}`;

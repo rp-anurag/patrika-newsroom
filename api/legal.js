@@ -20,15 +20,16 @@ module.exports = async function handler(req, res) {
     const { authError } = requireRole(req, VIEW_ROLES);
     if (authError) return res.status(authError.status).json({ error: authError.message });
 
-    const edition = req.query?.edition || '';
+    const edition      = req.query?.edition || '';
+    const filterState  = req.query?.state  && req.query.state  !== 'All' ? req.query.state  : '';
+    const filterBranch = req.query?.branch && req.query.branch !== 'All' ? req.query.branch : '';
     try {
-      let sql    = 'SELECT * FROM legal_cases';
-      const vals = [];
-      if (edition && edition !== 'All') {
-        sql += ' WHERE edition = ?';
-        vals.push(edition);
-      }
-      sql += ' ORDER BY hearing ASC';
+      const conds = [];
+      const vals  = [];
+      if (edition && edition !== 'All') { conds.push('edition = ?'); vals.push(edition); }
+      if (filterState)  { conds.push('edition IN (SELECT DISTINCT Branch FROM `user` WHERE State = ?)'); vals.push(filterState); }
+      if (filterBranch) { conds.push('edition = ?'); vals.push(filterBranch); }
+      const sql = 'SELECT * FROM legal_cases' + (conds.length ? ' WHERE ' + conds.join(' AND ') : '') + ' ORDER BY hearing ASC';
       const rows = await query(sql, vals);
       return res.status(200).json(rows);
     } catch (err) {
