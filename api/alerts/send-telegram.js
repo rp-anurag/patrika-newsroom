@@ -35,8 +35,14 @@ async function sendOne(token, chatId, text) {
 }
 
 function fmtDate(d) {
-  return new Date(String(d).slice(0, 10) + 'T00:00:00')
-    .toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  if (!d) return '?';
+  // mysql2 returns DATE columns as JS Date objects (UTC midnight)
+  if (d instanceof Date) {
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' });
+  }
+  // String form: '2026-07-13' or '2026-07-13 00:00:00'
+  const [y, m, day] = String(d).slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
 // ── IST date helpers (mirror of live.js) ──────────────────────────────────────
