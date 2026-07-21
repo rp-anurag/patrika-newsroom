@@ -40,7 +40,7 @@ async function getAlertRecipients(branches) {
       `SELECT EMPNAME, Branch, State, telegram_chat_id
        FROM \`user\`
        WHERE Branch IN (${ph})
-         AND Story_Type IN ('Desk Head', 'RE')
+         AND Story_Type IN ('RE')
          AND telegram_chat_id IS NOT NULL AND telegram_chat_id != ''
          AND (is_emp_working = 1 OR Status IN ('Working','Active'))`,
       branches
