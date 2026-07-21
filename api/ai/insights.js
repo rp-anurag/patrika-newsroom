@@ -61,6 +61,8 @@ async function computeFast(sF, bF) {
   const ydayStr  = toIST(Date.now() - 864e5);
   const day3Str  = toIST(Date.now() - 3  * 864e5);
   const day7Str  = toIST(Date.now() - 7  * 864e5);
+  // 7-day window ending at d-2: from 9 days ago up to (but not including) yesterday
+  const day9Str  = toIST(Date.now() - 9  * 864e5);
 
   const ecmsExtra = [
     sF ? 'AND Pan_no IN (SELECT pan_no FROM `user` WHERE State = ?)'  : '',
@@ -70,7 +72,7 @@ async function computeFast(sF, bF) {
   const qcExtra    = sF ? ' AND state = ?' : '';
   const uF         = [...(sF ? [sF] : []), ...(bF ? [bF] : [])];
 
-  const [ydayStats, gapRows, qcHotRows, topYday, zeroRow] = await Promise.all([
+  const [ydayStats, gapRows, qcHotRows, topYday, zeroRow, branchRows, branchQcRows] = await Promise.all([
 
     query(`SELECT SUM(No_Story) AS stories, SUM(No_Photo) AS photos,
                   COUNT(DISTINCT Pan_no) AS reporters, SUM(No_Words) AS words
@@ -129,6 +131,36 @@ async function computeFast(sF, bF) {
              ${bF ? 'AND u.Branch = ?' : ''}
              AND act.Pan_no IS NULL`,
           [ydayStr, todayStr, ...uF]).catch(() => [{ cnt: 0 }]),
+
+    // Branch performance: 7 days ending at d-2 (day9 → yday exclusive)
+    query(`SELECT u.Branch AS branch, u.State AS state,
+                  COUNT(DISTINCT u.pan_no)                                            AS total_reporters,
+                  COALESCE(SUM(e.No_Story), 0)                                        AS stories,
+                  COALESCE(SUM(e.No_Photo), 0)                                        AS photos,
+                  COALESCE(SUM(e.No_Words), 0)                                        AS words,
+                  COUNT(DISTINCT CASE WHEN e.No_Story > 0 THEN e.Pan_no END)          AS active_reporters
+           FROM \`user\` u
+           LEFT JOIN daily_achievment_count_ecms e
+             ON e.Pan_no = u.pan_no AND e.entrydate >= ? AND e.entrydate < ?
+           WHERE (u.is_emp_working = 1 OR u.Status = 'Working' OR u.Status = 'Active')
+             AND u.Branch IS NOT NULL AND u.Branch != ''
+             AND (LOWER(TRIM(u.Story_Type)) LIKE '%reporter%' OR LOWER(TRIM(u.Story_Type)) = 'stringer')
+             ${sF ? 'AND u.State = ?'  : ''}
+             ${bF ? 'AND u.Branch = ?' : ''}
+           GROUP BY u.Branch, u.State
+           HAVING total_reporters >= 2
+           ORDER BY stories DESC
+           LIMIT 60`,
+          [day9Str, ydayStr, ...uF]).catch(() => []),
+
+    // QC per branch: same 7-day window
+    query(`SELECT branch, SUM(no_of_mistake) AS qc_mistakes
+           FROM qc_review
+           WHERE entrydate >= ? AND entrydate < ?
+             ${sF ? 'AND state = ?'  : ''}
+             ${bF ? 'AND branch = ?' : ''}
+           GROUP BY branch`,
+          [day9Str, ydayStr, ...uF]).catch(() => []),
   ]);
 
   const contentGaps = gapRows
@@ -188,6 +220,45 @@ async function computeFast(sF, bF) {
     } catch (e) { console.error('[ai/insights] briefing:', e.message); }
   }
 
+  // Branch performance: merge stories + QC, compute composite score
+  const qcByBranch = {};
+  branchQcRows.forEach(r => {
+    qcByBranch[(r.branch || '').toLowerCase().trim()] = Number(r.qc_mistakes || 0);
+  });
+
+  const branchPerformance = branchRows.map(r => {
+    const stories  = Number(r.stories          || 0);
+    const photos   = Number(r.photos           || 0);
+    const words    = Number(r.words            || 0);
+    const total    = Number(r.total_reporters  || 1);
+    const active   = Number(r.active_reporters || 0);
+    const qc       = qcByBranch[(r.branch || '').toLowerCase().trim()] || 0;
+    const activeRate = Math.round((active / total) * 100);
+    const storiesPerRep = total > 0 ? Math.round((stories / total) * 10) / 10 : 0;
+    return {
+      branch: r.branch,
+      state:  r.state || '—',
+      stories, photos, words,
+      total_reporters:  total,
+      active_reporters: active,
+      active_rate:      activeRate,
+      stories_per_rep:  storiesPerRep,
+      qc_mistakes:      qc,
+    };
+  });
+
+  // Compute min/max for normalisation
+  if (branchPerformance.length) {
+    const maxS  = Math.max(...branchPerformance.map(b => b.stories), 1);
+    const maxQ  = Math.max(...branchPerformance.map(b => b.qc_mistakes), 1);
+    branchPerformance.forEach(b => {
+      const sN = b.stories / maxS;
+      const aN = b.active_rate / 100;
+      const qN = b.qc_mistakes / maxQ;
+      b.score = Math.round(sN * 50 + aN * 30 + (1 - qN) * 20);
+    });
+  }
+
   return {
     briefing,
     briefingStats,
@@ -198,6 +269,7 @@ async function computeFast(sF, bF) {
       checks:      Number(r.checks      || 0),
       avgPerCheck: Number(r.avgPerCheck || 0),
     })),
+    branchPerformance,
     generatedAt: new Date().toISOString(),
   };
 }
