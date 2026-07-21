@@ -54,7 +54,7 @@ function useTgStatus() {
 }
 
 export default function Alerts() {
-  const { t, state: globalState, branch: globalBranch } = useApp();
+  const { t, state: globalState, branch: globalBranch, isAdmin } = useApp();
   const navigate = useNavigate();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -714,8 +714,8 @@ SMTP_FROM=Patrika Newsroom <you@gmail.com>   # optional`}</pre>
         </SectionCard>
       )}
 
-      {/* ── Telegram Delivery Log (DB-backed) ────────────────────────────────── */}
-      <div ref={logSectionRef} className="mt-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+      {/* ── Telegram Delivery Log (Admin only) ──────────────────────────────── */}
+      {isAdmin() && <div ref={logSectionRef} className="mt-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2">
@@ -885,7 +885,7 @@ SMTP_FROM=Patrika Newsroom <you@gmail.com>   # optional`}</pre>
             </button>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
