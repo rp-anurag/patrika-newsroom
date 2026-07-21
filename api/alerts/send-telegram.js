@@ -160,7 +160,26 @@ async function sendEditionDelay(token, alert) {
 
 async function sendSilentBranch(token, alert) {
   const data = (alert.meta && alert.meta.data) || [];
-  const { reList, stateHeads } = await fetchREsAndStateHeads(alert.branches);
+  const branches = alert.branches || [];
+  const { reList, stateHeads } = await fetchREsAndStateHeads(branches);
+
+  // Fetch individual reporter names for affected branches
+  let reportersByBranch = {};
+  if (branches.length) {
+    const ph = branches.map(() => '?').join(',');
+    const reporters = await query(
+      `SELECT EMPNAME AS name, Branch AS branch FROM \`user\`
+       WHERE Branch IN (${ph})
+         AND (LOWER(TRIM(Story_Type)) LIKE '%reporter%' OR LOWER(TRIM(Story_Type)) = 'stringer')
+         AND (is_emp_working = 1 OR Status IN ('Working','Active'))
+       ORDER BY Branch, EMPNAME`,
+      branches
+    ).catch(() => []);
+    reporters.forEach(r => {
+      (reportersByBranch[r.branch] = reportersByBranch[r.branch] || []).push(r.name);
+    });
+  }
+
   const byBranch = {};
   data.forEach(b => { byBranch[b.branch] = b; });
 
@@ -169,9 +188,13 @@ async function sendSilentBranch(token, alert) {
   for (const re of reList) {
     const b = byBranch[re.Branch];
     if (!b) continue;
+    const names = reportersByBranch[re.Branch] || [];
+    const nameSection = names.length
+      ? '\n\nReporters:\n' + names.map(n => `• ${n}`).join('\n')
+      : `\n${b.reporters} reporters registered`;
     messages.push({
       chatId: re.telegram_chat_id, name: re.EMPNAME, branch: re.Branch, state: re.State,
-      text: `🔴 <b>Silent Branch — ${re.Branch}</b>\n\nYour branch filed <b>0 stories</b> yesterday.\n${b.reporters} reporters registered.\n\nPlease ensure coverage is submitted today.\n\n<i>Patrika Newsroom</i>`,
+      text: `🔴 <b>Silent Branch — ${re.Branch}</b>\n\nYour branch filed <b>0 stories</b> yesterday.${nameSection}\n\nPlease ensure coverage is submitted today.\n\n<i>Patrika Newsroom</i>`,
     });
   }
 
@@ -179,7 +202,11 @@ async function sendSilentBranch(token, alert) {
     const stateBranches = new Set(reList.filter(r => r.State === sh.State).map(r => r.Branch));
     const stateData = data.filter(b => stateBranches.has(b.branch));
     if (!stateData.length) continue;
-    const list = stateData.map(b => `• ${b.branch} (${b.reporters} reporters)`).join('\n');
+    const list = stateData.map(b => {
+      const names = reportersByBranch[b.branch] || [];
+      const nameStr = names.length ? ': ' + names.join(', ') : ` (${b.reporters} reporters)`;
+      return `• ${b.branch}${nameStr}`;
+    }).join('\n');
     messages.push({
       chatId: sh.telegram_chat_id, name: sh.EMPNAME, branch: sh.Branch, state: sh.State,
       text: `🔴 <b>Silent Branch — ${sh.State}</b>\n\n${stateData.length} branch${stateData.length > 1 ? 'es' : ''} filed 0 stories yesterday:\n${list}\n\n<i>Patrika Newsroom</i>`,
