@@ -181,6 +181,7 @@ app.all('/api/digital/targets',       require('./api/digital/targets')); // mult
 app.all('/api/digital/breaking-news', h('./api/digital/breaking-news'));
 app.get('/api/digital/news-feed',    h('./api/digital/news-feed'));
 app.get('/api/digital/ai-insights',  h('./api/digital/ai-insights'));
+app.get('/api/digital/youtube',       h('./api/digital/youtube'));
 app.get('/api/digital/chartbeat',     h('./api/digital/chartbeat'));
 
 // ── Auth ──────────────────────────────────────────────────────────────────────

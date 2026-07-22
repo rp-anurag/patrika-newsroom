@@ -572,23 +572,61 @@ function fmtDocDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function parseFilenameInfo(filename) {
+  const name = filename.replace(/\.[^.]+$/, '');
+  let dateStr = '';
+  let labelStr = name;
+
+  // YYYY-MM-DD or YYYY_MM_DD
+  let m = name.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (m) {
+    dateStr = `${m[1]}-${m[2]}-${m[3]}`;
+    labelStr = name.replace(m[0], '');
+  }
+
+  // DD-MM-YYYY or DD_MM_YYYY
+  if (!dateStr) {
+    m = name.match(/(\d{2})[-_](\d{2})[-_](\d{4})/);
+    if (m) {
+      dateStr = `${m[3]}-${m[2]}-${m[1]}`;
+      labelStr = name.replace(m[0], '');
+    }
+  }
+
+  // Month name + year: "June-2026", "Jun_2026", "June 2026"
+  if (!dateStr) {
+    const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+    m = name.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-_\s]+(\d{4})/i);
+    if (m) {
+      const mo = MONTHS[m[1].toLowerCase().slice(0, 3)];
+      dateStr = `${m[2]}-${String(mo).padStart(2, '0')}-01`;
+      labelStr = name.replace(m[0], '');
+    }
+  }
+
+  // Clean label: strip leading/trailing separators, replace _ with space
+  labelStr = labelStr.replace(/^[-_\s]+|[-_\s]+$/g, '').replace(/[-_]+/g, ' ').trim();
+  if (!labelStr) labelStr = name.replace(/[-_]+/g, ' ').trim();
+
+  return { label: labelStr, date: dateStr };
+}
+
 // ── Circular / Stylesheet tab ──────────────────────────────────────────────────
 function DocTab({ docType }) {
   const { user } = useApp();
-  const isAdmin   = user?.role === 'Admin';
-  const fileRef   = useRef();
-  const isPdf     = docType === 'circular';
-  const accept    = isPdf ? '.pdf,application/pdf' : '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  const typeLabel = isPdf ? 'PDF' : 'DOC/DOCX';
+  const isAdmin  = user?.role === 'Admin';
+  const fileRef  = useRef();
+  const isPdf    = docType === 'circular';
+  const accept   = isPdf ? '.pdf,application/pdf' : '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const typeLbl  = isPdf ? 'PDF' : 'DOC/DOCX';
 
-  const [docs,    setDocs]    = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [busy,    setBusy]    = useState(false);
-  const [err,     setErr]     = useState('');
-  const [form,    setForm]    = useState({ label: '', circular_date: '' });
-  const [file,    setFile]    = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [viewing,  setViewing]  = useState(null);
+  const [docs,      setDocs]      = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [queue,     setQueue]     = useState([]); // [{id,file,label,date,status,progress,err}]
+  const [uploading, setUploading] = useState(false);
+  const [viewing,   setViewing]   = useState(null);
+  const [drag,      setDrag]      = useState(false);
+  const [search,    setSearch]    = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -601,38 +639,68 @@ function DocTab({ docType }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function submit(e) {
-    e.preventDefault();
-    if (!file) return setErr('Please select a file');
-    if (!form.label.trim()) return setErr('Label is required');
-    if (!form.circular_date) return setErr('Date is required');
-    setBusy(true); setErr('');
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('doc_type', docType);
-    fd.append('label', form.label.trim());
-    fd.append('circular_date', form.circular_date);
+  function addFiles(files) {
+    const items = Array.from(files).map(f => {
+      const { label, date } = parseFilenameInfo(f.name);
+      return { id: Math.random().toString(36).slice(2), file: f, label, date, status: 'pending', progress: 0, err: '' };
+    });
+    setQueue(prev => [...prev, ...items]);
+  }
 
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/archive-docs');
-      xhr.setRequestHeader('Authorization', `Bearer ${TOKEN()}`);
-      xhr.upload.onprogress = ev => { if (ev.lengthComputable) setProgress(Math.round(ev.loaded / ev.total * 100)); };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
-        else { try { reject(new Error(JSON.parse(xhr.responseText).error)); } catch { reject(new Error(`HTTP ${xhr.status}`)); } }
-      };
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(fd);
-    }).then(data => {
-      setDocs(prev => [data.doc, ...prev]);
-      setForm({ label: '', circular_date: '' });
-      setFile(null);
-      setProgress(0);
-      if (fileRef.current) fileRef.current.value = '';
-    }).catch(e => setErr(e.message));
+  function onDrop(e) {
+    e.preventDefault(); setDrag(false);
+    addFiles(e.dataTransfer.files);
+  }
 
-    setBusy(false);
+  function updateQueue(id, updates) {
+    setQueue(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
+  }
+
+  async function uploadAll() {
+    const pending = queue.filter(x => x.status === 'pending');
+    if (!pending.length) return;
+    setUploading(true);
+
+    for (const item of pending) {
+      if (!item.label.trim()) { updateQueue(item.id, { err: 'Label is required', status: 'error' }); continue; }
+      if (!item.date)         { updateQueue(item.id, { err: 'Date is required',  status: 'error' }); continue; }
+      updateQueue(item.id, { status: 'uploading', err: '' });
+
+      try {
+        const fd = new FormData();
+        fd.append('file', item.file);
+        fd.append('doc_type', docType);
+        fd.append('label', item.label.trim());
+        fd.append('circular_date', item.date);
+
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/archive-docs');
+          xhr.setRequestHeader('Authorization', `Bearer ${TOKEN()}`);
+          xhr.upload.onprogress = ev => {
+            if (ev.lengthComputable) updateQueue(item.id, { progress: Math.round(ev.loaded / ev.total * 100) });
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const data = JSON.parse(xhr.responseText);
+              setDocs(prev => [data.doc, ...prev]);
+              updateQueue(item.id, { status: 'done', progress: 100 });
+              resolve();
+            } else {
+              try { reject(new Error(JSON.parse(xhr.responseText).error)); }
+              catch { reject(new Error(`HTTP ${xhr.status}`)); }
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.send(fd);
+        });
+      } catch (e) {
+        updateQueue(item.id, { status: 'error', err: e.message });
+      }
+    }
+
+    setUploading(false);
+    setTimeout(() => setQueue(prev => prev.filter(x => x.status !== 'done')), 1500);
   }
 
   async function deleteDoc(id) {
@@ -641,80 +709,137 @@ function DocTab({ docType }) {
     setDocs(prev => prev.filter(d => d.id !== id));
   }
 
-  const Icon = isPdf ? File : FileText;
-  const color = isPdf ? '#d71920' : '#3b82f6';
+  const Icon       = isPdf ? File : FileText;
+  const color      = isPdf ? '#d71920' : '#3b82f6';
+  const pendingCnt = queue.filter(x => x.status === 'pending').length;
+
+  const filteredDocs = search.trim()
+    ? docs.filter(d =>
+        (d.label || '').toLowerCase().includes(search.toLowerCase()) ||
+        (d.original_name || '').toLowerCase().includes(search.toLowerCase())
+      )
+    : docs;
 
   return (
     <>
     <div className="mt-4 grid gap-4 lg:grid-cols-3">
-      {/* Upload form */}
+      {/* Upload panel */}
       <div className="card p-4">
         <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
           <Upload size={15} style={{ color }} />
-          Upload {isPdf ? 'Circular' : 'Stylesheet'}
+          Upload {isPdf ? 'Circulars' : 'Stylesheets'}
         </h3>
-        <form onSubmit={submit} className="space-y-3">
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--muted)' }}>Label *</label>
-            <input className="input w-full" placeholder={isPdf ? 'e.g. Press Circular — June 2026' : 'e.g. News Stylesheet v3'}
-              value={form.label} onChange={e => setForm(p => ({ ...p, label: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--muted)' }}>
-              <CalendarDays size={11} className="inline mr-1" />Date *
-            </label>
-            <input type="date" className="input w-full"
-              value={form.circular_date} onChange={e => setForm(p => ({ ...p, circular_date: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--muted)' }}>
-              File ({typeLabel}) *
-            </label>
-            <div
-              className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 cursor-pointer transition-colors"
-              style={{ borderColor: file ? color : 'var(--border)', background: file ? color + '10' : 'var(--bg)' }}
-              onClick={() => fileRef.current?.click()}>
-              {file ? (
-                <>
-                  <Icon size={22} style={{ color }} />
-                  <div className="text-xs font-semibold mt-1 text-center">{file.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{fmtSize(file.size)}</div>
-                </>
-              ) : (
-                <>
-                  <Upload size={22} style={{ color: 'var(--muted)' }} />
-                  <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Click to select {typeLabel}</div>
-                </>
-              )}
-            </div>
-            <input ref={fileRef} type="file" accept={accept} className="hidden"
-              onChange={e => setFile(e.target.files[0] || null)} />
-          </div>
 
-          {err && <div className="text-xs p-2 rounded" style={{ background: '#d7192015', color: '#d71920' }}>{err}</div>}
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => fileRef.current?.click()}
+          className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-5 cursor-pointer transition-colors mb-3"
+          style={{ borderColor: drag ? color : 'var(--border)', background: drag ? color + '10' : 'var(--bg)' }}>
+          <Upload size={24} style={{ color: drag ? color : 'var(--muted)' }} />
+          <div className="text-sm font-semibold mt-2" style={{ color: 'var(--text)' }}>
+            Drop files or click to browse
+          </div>
+          <div className="text-xs mt-1 text-center" style={{ color: 'var(--muted)' }}>
+            Multiple {typeLbl} · Label &amp; date auto-detected from filename
+          </div>
+        </div>
+        <input ref={fileRef} type="file" accept={accept} multiple className="hidden"
+          onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
 
-          {busy && progress > 0 && (
-            <div>
-              <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                <span>Uploading…</span><span>{progress}%</span>
+        {/* Queue list */}
+        {queue.length > 0 && (
+          <div className="space-y-2 mb-3 max-h-80 overflow-y-auto pr-0.5">
+            {queue.map(item => (
+              <div key={item.id} className="rounded-lg border p-2.5"
+                style={{
+                  borderColor: item.status === 'error' ? '#d71920' : item.status === 'done' ? '#10b981' : 'var(--border)',
+                  background: 'var(--bg)',
+                }}>
+                {/* File name row */}
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Icon size={13} style={{ color, flexShrink: 0 }} />
+                    <span className="text-xs truncate font-medium" style={{ color: 'var(--muted)' }}>{item.file.name}</span>
+                  </div>
+                  {item.status === 'done'
+                    ? <CheckCircle size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                    : item.status !== 'uploading' && (
+                      <button onClick={() => setQueue(prev => prev.filter(x => x.id !== item.id))}
+                        style={{ color: 'var(--muted)', flexShrink: 0 }}>
+                        <X size={13} />
+                      </button>
+                    )
+                  }
+                </div>
+
+                {/* Editable fields */}
+                {item.status !== 'done' && (
+                  <div className="space-y-1.5">
+                    <input
+                      className="input w-full text-xs py-1"
+                      placeholder="Label *"
+                      value={item.label}
+                      disabled={item.status === 'uploading'}
+                      onChange={e => updateQueue(item.id, { label: e.target.value })}
+                    />
+                    <input
+                      type="date"
+                      className="input w-full text-xs py-1"
+                      value={item.date}
+                      disabled={item.status === 'uploading'}
+                      onChange={e => updateQueue(item.id, { date: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {/* Progress bar */}
+                {item.status === 'uploading' && item.progress > 0 && (
+                  <div className="mt-1.5 h-1 rounded-full" style={{ background: 'var(--border)' }}>
+                    <div className="h-1 rounded-full transition-all" style={{ width: `${item.progress}%`, background: color }} />
+                  </div>
+                )}
+
+                {item.err && <div className="mt-1 text-xs" style={{ color: '#d71920' }}>{item.err}</div>}
               </div>
-              <div className="h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
-                <div className="h-1.5 rounded-full transition-all" style={{ width: `${progress}%`, background: color }} />
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
+        )}
 
-          <button type="submit" disabled={busy} className="btn-primary w-full flex items-center justify-center gap-2 text-sm">
-            {busy ? <><RefreshCw size={13} className="animate-spin" />Uploading…</> : <><Upload size={13} />Upload</>}
+        {queue.length > 0 && (
+          <button onClick={uploadAll} disabled={uploading || pendingCnt === 0}
+            className="btn-primary w-full flex items-center justify-center gap-2 text-sm">
+            {uploading
+              ? <><RefreshCw size={13} className="animate-spin" />Uploading…</>
+              : <><Upload size={13} />Upload {pendingCnt > 1 ? `${pendingCnt} Files` : 'File'}</>}
           </button>
-        </form>
+        )}
       </div>
 
       {/* Document list */}
       <div className="lg:col-span-2">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold" style={{ color: 'var(--muted)' }}>{docs.length} document{docs.length !== 1 ? 's' : ''}</span>
-          <button onClick={load} className="btn-ghost p-1.5" title="Refresh">
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-sm font-semibold shrink-0" style={{ color: 'var(--muted)' }}>
+            {filteredDocs.length}{search ? ` of ${docs.length}` : ''} document{docs.length !== 1 ? 's' : ''}
+          </span>
+          <div className="relative flex-1 min-w-[180px]">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--muted)' }} />
+            <input
+              className="input pl-8 pr-7 py-1.5 text-xs w-full"
+              placeholder="Search circulars…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--muted)' }}>
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          <button onClick={load} className="btn-ghost p-1.5 shrink-0" title="Refresh">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
@@ -726,6 +851,11 @@ function DocTab({ docType }) {
             <Icon size={36} className="mx-auto mb-2 opacity-25" />
             <div className="font-semibold text-sm">No {isPdf ? 'circulars' : 'stylesheets'} uploaded yet</div>
           </div>
+        ) : filteredDocs.length === 0 ? (
+          <div className="card py-12 text-center">
+            <Search size={28} className="mx-auto mb-2 opacity-20" />
+            <div className="text-sm" style={{ color: 'var(--muted)' }}>No results for "{search}"</div>
+          </div>
         ) : (
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
@@ -733,13 +863,12 @@ function DocTab({ docType }) {
                 <tr style={{ background: 'var(--surface-alt, #f8f9fa)', borderBottom: '2px solid var(--border)' }}>
                   <th className="p-3 text-left font-semibold">Label</th>
                   <th className="p-3 text-left font-semibold">Date</th>
-                  <th className="p-3 text-left font-semibold">Size</th>
                   <th className="p-3 text-left font-semibold">Uploaded</th>
                   <th className="p-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
-                {docs.map(doc => (
+                {filteredDocs.map(doc => (
                   <tr key={doc.id} className="hover:bg-opacity-50">
                     <td className="p-3">
                       <div className="flex items-center gap-2">
@@ -749,26 +878,18 @@ function DocTab({ docType }) {
                       <div className="text-xs mt-0.5 truncate max-w-[220px]" style={{ color: 'var(--muted)' }}>{doc.original_name}</div>
                     </td>
                     <td className="p-3 text-sm whitespace-nowrap" style={{ color: 'var(--muted)' }}>{fmtDocDate(doc.circular_date)}</td>
-                    <td className="p-3 text-sm whitespace-nowrap" style={{ color: 'var(--muted)' }}>{fmtSize(doc.file_size)}</td>
                     <td className="p-3 text-xs whitespace-nowrap" style={{ color: 'var(--muted)' }}>{fmtDocDate(doc.uploaded_at)}</td>
                     <td className="p-3">
                       <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setViewing(doc)}
-                          className="btn-ghost p-1.5 text-xs flex items-center gap-1"
-                          title="View">
+                        <button onClick={() => setViewing(doc)} className="btn-ghost p-1.5 text-xs" title="View">
                           <Eye size={13} />
                         </button>
-                        <a
-                          href={`/uploads/archive-docs/${doc.filename}`}
-                          download={doc.original_name}
-                          className="btn-ghost p-1.5 text-xs flex items-center gap-1"
-                          title="Download">
+                        <a href={`/uploads/archive-docs/${doc.filename}`} download={doc.original_name}
+                          className="btn-ghost p-1.5 text-xs" title="Download">
                           <Download size={13} />
                         </a>
                         {isAdmin && (
-                          <button
-                            onClick={() => deleteDoc(doc.id)}
+                          <button onClick={() => deleteDoc(doc.id)}
                             className="p-1.5 rounded-lg text-xs"
                             style={{ background: '#d7192015', color: '#d71920' }}
                             title="Delete">

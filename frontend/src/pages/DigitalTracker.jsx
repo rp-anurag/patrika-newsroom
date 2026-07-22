@@ -15,6 +15,7 @@ import {
   CalendarDays, ArrowRight, Timer, LayoutList, Users2, Settings, BarChart3,
   Radio, Activity, SlidersHorizontal,
   Brain, TrendingDown, Gauge, Flame, Lightbulb, Star, ShieldAlert, Bolt,
+  Play, ThumbsUp, MessageSquare, Video, Youtube,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { api } from '../api/client.js';
@@ -98,6 +99,18 @@ const TABS = [
     activeBg: 'rgba(239,68,68,0.25)',
   },
   {
+    key:   'alert',
+    label: 'Alerts',
+    desc:  'Digital team performance alerts & warnings',
+    icon:  ShieldAlert,
+    color: '#ea580c',
+    grad:  'linear-gradient(135deg,#ea580c,#c2410c)',
+    lightBg: '#ffedd5',
+    lightFg: '#c2410c',
+    activeColor: '#fb923c',
+    activeBg: 'rgba(234,88,12,0.25)',
+  },
+  {
     key:   'team-leader',
     label: 'Team Leader',
     desc:  'Team-wise hourly publish monitor',
@@ -134,6 +147,18 @@ const TABS = [
     lightFg: '#b45309',
     activeColor: '#fbbf24',
     activeBg: 'rgba(217,119,6,0.25)',
+  },
+  {
+    key:   'youtube',
+    label: 'YouTube',
+    desc:  'Rajasthan Patrika TV channel analytics',
+    icon:  Play,
+    color: '#ef4444',
+    grad:  'linear-gradient(135deg,#ef4444,#dc2626)',
+    lightBg: '#fee2e2',
+    lightFg: '#dc2626',
+    activeColor: '#f87171',
+    activeBg: 'rgba(239,68,68,0.25)',
   },
   {
     key:   'settings',
@@ -255,6 +280,9 @@ export default function DigitalTracker() {
       {tab === 'breaking' && (
         <BreakingNewsTab user={user} canAdmin={canAdmin} />
       )}
+      {tab === 'alert' && (
+        <AlertTab user={user} canAdmin={canAdmin} />
+      )}
       {tab === 'team-leader' && (canAdmin || isTeamLead) && (
         <TeamLeaderTab user={user} canAdmin={canAdmin} />
       )}
@@ -263,6 +291,9 @@ export default function DigitalTracker() {
       )}
       {tab === 'ai-insights' && (
         <AiInsightsTab user={user} canAdmin={canAdmin} />
+      )}
+      {tab === 'youtube' && (
+        <YouTubeTab user={user} canAdmin={canAdmin} />
       )}
       {tab === 'settings' && canAdmin && (
         <SettingsTab month={today} onRefresh={() => {}} />
@@ -1151,6 +1182,22 @@ function PatrikaStoriesTab({ user, canAdmin }) {
   const [authorMap,    setAuthorMap]    = useState({});
   const [authorsLoading, setAuthorsLoading] = useState(false);
   const [showFilters,  setShowFilters]  = useState(false);
+  // Team leader mapping: editor name (lowercase) → { lead, team }
+  const [tlMap, setTlMap] = useState({});
+
+  useEffect(() => {
+    api.digitalUsers()
+      .then(r => {
+        const map = {};
+        (r.users || []).forEach(u => {
+          if (u.name && u.incharge) {
+            map[u.name.trim().toLowerCase()] = { lead: u.incharge, team: u.team || '' };
+          }
+        });
+        setTlMap(map);
+      })
+      .catch(() => {});
+  }, []);
 
   // Keep a single `date` alias for today-mode (used by live scrape & save form)
   const date = period === 'today' ? fromDate : toDate;
@@ -1396,6 +1443,7 @@ function PatrikaStoriesTab({ user, canAdmin }) {
         authorsDone={authorsDone}
         authorsTotal={authorsTotal}
         authorMap={authorMap}
+        tlMap={tlMap}
       />
     </div>
   );
@@ -1524,12 +1572,15 @@ function SectionHeader({ icon: Icon, color, title, meta, right }) {
 }
 
 function StoriesDashboard({ allStories, date, loading,
-  authorsLoading, authorsDone, authorsTotal, authorMap = {} }) {
+  authorsLoading, authorsDone, authorsTotal, authorMap = {}, tlMap = {} }) {
 
   const [selectedEditor,   setSelectedEditor]   = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedLead,     setSelectedLead]     = useState(null);
   const [showCatHeat,      setShowCatHeat]      = useState(false);
   const [showEdHeat,       setShowEdHeat]       = useState(false);
+  const [showTLHeat,       setShowTLHeat]       = useState(false);
+  const [subTab,           setSubTab]           = useState('team-leader');
 
   // Normalise category: prefer s.category (already server-extracted), else derive from URL
   const getCat = (s) => {
@@ -1601,6 +1652,34 @@ function StoriesDashboard({ allStories, date, loading,
     ? allStories.filter(s => s.name === selectedEditor).sort((a, b) => (a.time || '').localeCompare(b.time || ''))
     : [];
 
+  // ── Team-leader breakdown ─────────────────────────────────────────────────
+  const hasTLMap = Object.keys(tlMap).length > 0;
+  const byLead = {};
+  allStories.filter(s => s.name).forEach(s => {
+    const info = tlMap[s.name.trim().toLowerCase()];
+    const lead = info?.lead || (hasTLMap ? '(No TL mapped)' : null);
+    if (!lead) return;
+    if (!byLead[lead]) byLead[lead] = { lead, team: info?.team || '', stories: [], editors: new Set(), hourCounts: {} };
+    byLead[lead].stories.push(s);
+    byLead[lead].editors.add(s.name);
+    if (s.time) {
+      const hr = parseInt(s.time.split(':')[0], 10);
+      if (!isNaN(hr)) byLead[lead].hourCounts[hr] = (byLead[lead].hourCounts[hr] || 0) + 1;
+    }
+  });
+  const leadRows    = Object.values(byLead)
+    .map(l => ({ ...l, editors: [...l.editors] }))
+    .sort((a, b) => b.stories.length - a.stories.length);
+  const maxLeadHour = Math.max(1, ...leadRows.flatMap(l => Object.values(l.hourCounts)));
+
+  const leadStories = selectedLead
+    ? allStories.filter(s => {
+        if (!s.name) return false;
+        const info = tlMap[s.name.trim().toLowerCase()];
+        return (info?.lead || '(No TL mapped)') === selectedLead;
+      }).sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+    : [];
+
   return (
     <div className="space-y-5">
 
@@ -1623,7 +1702,226 @@ function StoriesDashboard({ allStories, date, loading,
           color="#16a34a" />
       </div>
 
-      {/* ══ EDITOR SECTION ════════════════════════════════════════════════ */}
+      {/* ══ SUB-TAB STRIP ════════════════════════════════════════════════ */}
+      <div className="flex gap-1 border-b" style={{ borderColor: 'var(--border)' }}>
+        {[
+          { key: 'team-leader', label: 'Team Leader Activity', icon: Users2,  color: '#6366f1' },
+          { key: 'editor',      label: 'Editor Activity',      icon: Users,   color: '#16a34a' },
+          { key: 'category',    label: 'Category Activity',    icon: Globe,   color: '#7c3aed' },
+        ].map(t => {
+          const active = subTab === t.key;
+          const Icon = t.icon;
+          return (
+            <button key={t.key} onClick={() => setSubTab(t.key)}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all relative"
+              style={{
+                color:        active ? t.color : 'var(--muted)',
+                borderBottom: active ? `2px solid ${t.color}` : '2px solid transparent',
+                marginBottom: '-1px',
+                background:   'transparent',
+              }}>
+              <Icon size={14} style={{ color: active ? t.color : 'var(--muted)' }} />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ══ TEAM LEADER SUB-TAB ══════════════════════════════════════════ */}
+      {subTab === 'team-leader' && (
+        <div className="space-y-3">
+          <SectionHeader
+            icon={Users2} color="#6366f1"
+            title="Team Leader Activity"
+            meta={leadRows.length ? `${leadRows.length} teams` : authorsLoading ? 'Loading…' : 'No data yet'}
+            right={`${namedCount} attributed stories`}
+          />
+
+          {/* Team leader cards */}
+          {leadRows.length > 0 && (
+            <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+              {leadRows.map((l, idx) => {
+                const colors = ['#6366f1','#0891b2','#d97706','#16a34a','#dc2626','#7c3aed'];
+                const col = colors[idx % colors.length];
+                const isSel = selectedLead === l.lead;
+                const initials = l.lead.trim().split(/\s+/).slice(0,2).map(w => w[0]?.toUpperCase()||'').join('');
+                const peakHr = Object.entries(l.hourCounts).sort((a,b)=>b[1]-a[1])[0];
+                const activeHrs = Object.keys(l.hourCounts).length;
+                return (
+                  <button key={l.lead} onClick={() => setSelectedLead(isSel ? null : l.lead)}
+                    className="rounded-xl p-3 border text-left w-full transition-all"
+                    style={{
+                      background: isSel ? `${col}10` : 'var(--surface)',
+                      borderColor: isSel ? col : 'var(--border)',
+                      borderWidth: isSel ? '2px' : '1px',
+                    }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold flex-shrink-0"
+                        style={{ background: `${col}18`, color: col }}>
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate leading-tight">{l.lead}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                          {l.editors.length} editor{l.editors.length !== 1 ? 's' : ''}
+                          {peakHr ? ` · peak ${peakHr[0].padStart(2,'0')}:00` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <span className="text-xl font-bold leading-none" style={{ color: col }}>{l.stories.length}</span>
+                      <span className="text-xs pb-0.5" style={{ color: 'var(--muted)' }}>
+                        {activeHrs} hr{activeHrs !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Team lead stories panel */}
+          {selectedLead && (() => {
+            const idx = leadRows.findIndex(l => l.lead === selectedLead);
+            const colors = ['#6366f1','#0891b2','#d97706','#16a34a','#dc2626','#7c3aed'];
+            const col = colors[idx % colors.length];
+            return (
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${col}40`, background: 'var(--surface)' }}>
+                <div className="flex items-center justify-between px-4 py-3"
+                  style={{ background: `linear-gradient(90deg,${col}0d,${col}1a)`, borderBottom: `1px solid ${col}30` }}>
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg p-1.5" style={{ background: `${col}22` }}>
+                      <Users2 size={14} style={{ color: col }} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm" style={{ color: col }}>{selectedLead}</p>
+                      <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                        {leadStories.length} {leadStories.length === 1 ? 'story' : 'stories'} · {date}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedLead(null)}
+                    className="rounded-full p-1 hover:bg-black/5 transition-colors" style={{ color: col }}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                  {leadStories.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>No stories found</div>
+                  ) : leadStories.map((s, i) => (
+                    <div key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-black/[0.02] transition-colors">
+                      <span className="text-xs font-mono mt-0.5 flex-shrink-0 tabular-nums"
+                        style={{ color: 'var(--muted)', minWidth: 40 }}>{s.time || '—'}</span>
+                      <div className="flex-1 min-w-0">
+                        {s.url
+                          ? <a href={s.url} target="_blank" rel="noopener noreferrer"
+                              className="text-sm font-medium leading-snug hover:underline line-clamp-2"
+                              style={{ color: 'var(--text)' }}>{s.title}</a>
+                          : <p className="text-sm font-medium leading-snug line-clamp-2">{s.title}</p>
+                        }
+                        {s.name && (
+                          <span className="text-xs mt-0.5 inline-flex items-center gap-1" style={{ color: col }}>
+                            <Users2 size={10} />{s.name}
+                          </span>
+                        )}
+                      </div>
+                      {s.url && (
+                        <a href={s.url} target="_blank" rel="noopener noreferrer"
+                          className="flex-shrink-0 mt-0.5 opacity-40 hover:opacity-100 transition-opacity">
+                          <ExternalLink size={13} style={{ color: 'var(--muted)' }} />
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Toggle: team leader hourly heatmap */}
+          {leadRows.length > 0 && activeHours.length > 0 && (
+            <>
+              <button onClick={() => setShowTLHeat(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: '#6366f1', background: '#6366f112', border: '1px solid #6366f130' }}>
+                <BarChart3 size={12} />
+                {showTLHeat ? 'Hide' : 'Show'} Hourly Heatmap
+                {showTLHeat ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+              </button>
+
+              {showTLHeat && (
+                <SectionCard title={
+                  <span className="flex items-center gap-2">
+                    <Users2 size={14} style={{ color: '#6366f1' }} />
+                    Team Leader — Hourly Submissions · {date}
+                  </span>
+                }>
+                  <div className="overflow-x-auto">
+                    <table className="text-xs" style={{ borderCollapse: 'separate', borderSpacing: '2px 3px' }}>
+                      <thead>
+                        <tr>
+                          <th className="text-left pr-4 pb-2 font-semibold"
+                            style={{ color: 'var(--muted)', minWidth: 160 }}>Team Leader</th>
+                          {activeHours.map(h => (
+                            <th key={h} className="pb-2 text-center font-medium"
+                              style={{ color: 'var(--muted)', minWidth: 38 }}>
+                              {String(h).padStart(2, '0')}
+                            </th>
+                          ))}
+                          <th className="pb-2 pl-4 font-bold text-right" style={{ minWidth: 52 }}>Total</th>
+                        </tr>
+                        <tr>
+                          <td className="pr-4 pb-2 font-semibold" style={{ color: '#6366f1' }}>All teams</td>
+                          {activeHours.map(h => (
+                            <td key={h} className="pb-2 text-center">
+                              <HeatCell count={hourTotals[h] || 0} max={maxHourTotal} />
+                            </td>
+                          ))}
+                          <td className="pb-2 pl-4 text-right font-bold" style={{ color: '#6366f1' }}>{namedCount}</td>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leadRows.map((l, idx) => {
+                          const colors = ['#6366f1','#0891b2','#d97706','#16a34a','#dc2626','#7c3aed'];
+                          const col = colors[idx % colors.length];
+                          const isSel = selectedLead === l.lead;
+                          return (
+                            <tr key={l.lead} style={{ background: isSel ? `${col}08` : 'transparent' }}>
+                              <td className="pr-4 py-0.5 whitespace-nowrap">
+                                <button onClick={() => setSelectedLead(isSel ? null : l.lead)}
+                                  className="font-medium text-left hover:underline flex items-center gap-1"
+                                  style={{ color: isSel ? col : 'inherit' }}>
+                                  {l.lead}
+                                  <span className="ml-1 text-[10px] font-normal" style={{ color: 'var(--muted)' }}>
+                                    ({l.editors.length} ed.)
+                                  </span>
+                                  {isSel ? <ChevronUp size={11} /> : <ChevronDown size={11} style={{ color: 'var(--muted)' }} />}
+                                </button>
+                              </td>
+                              {activeHours.map(h => (
+                                <td key={h} className="py-0.5 text-center">
+                                  <HeatCell count={l.hourCounts[h] || 0} max={maxLeadHour} />
+                                </td>
+                              ))}
+                              <td className="py-0.5 pl-4 text-right font-bold" style={{ color: col }}>
+                                {l.stories.length}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <HeatLegend extra={`${namedCount} / ${allStories.length} stories attributed`} />
+                </SectionCard>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══ EDITOR SUB-TAB ═══════════════════════════════════════════════ */}
+      {subTab === 'editor' && (
       <div className="space-y-3">
         <SectionHeader
           icon={Users2} color="#16a34a"
@@ -1800,8 +2098,10 @@ function StoriesDashboard({ allStories, date, loading,
           </>
         )}
       </div>
+      )}
 
-      {/* ══ CATEGORY SECTION ══════════════════════════════════════════════ */}
+      {/* ══ CATEGORY SUB-TAB ═════════════════════════════════════════════ */}
+      {subTab === 'category' && (
       <div className="space-y-3">
         <SectionHeader
           icon={Globe} color="#7c3aed"
@@ -1957,6 +2257,515 @@ function StoriesDashboard({ allStories, date, loading,
           </>
         )}
       </div>
+      )}
+    </div>
+  );
+}
+
+// ── YouTube Tab ───────────────────────────────────────────────────────────────
+
+const DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const TYPE_META   = {
+  short:   { label: 'Short',   color: '#16a34a', bg: '#dcfce7', desc: '< 3 min' },
+  medium:  { label: 'Medium',  color: '#2563eb', bg: '#dbeafe', desc: '3–20 min' },
+  long:    { label: 'Long',    color: '#7c3aed', bg: '#ede9fe', desc: '> 20 min' },
+  unknown: { label: '—',       color: '#64748b', bg: '#f1f5f9', desc: 'No duration' },
+};
+
+function YTStatCard({ icon: Icon, label, value, sub, color, accent }) {
+  return (
+    <div className="rounded-xl border p-4 flex items-start gap-3"
+      style={{ borderColor: accent ? color + '40' : 'var(--border)', background: accent ? color + '0d' : 'var(--card)' }}>
+      <div className="rounded-lg p-2 flex-shrink-0" style={{ background: color + '20' }}>
+        <Icon size={18} style={{ color }} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>{label}</div>
+        <div className="text-xl font-bold leading-tight truncate" style={{ color: accent ? color : 'var(--text)' }}>{value || '—'}</div>
+        {sub && <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function DurationBadge({ durationStr, type }) {
+  const meta = TYPE_META[type] || TYPE_META.unknown;
+  if (!durationStr) return null;
+  return (
+    <span className="absolute bottom-2 right-2 rounded px-1.5 py-0.5 text-xs font-bold"
+      style={{ background: 'rgba(0,0,0,0.82)', color: meta.color }}>
+      {durationStr}
+    </span>
+  );
+}
+
+function TypeBadge({ type, small }) {
+  const meta = TYPE_META[type] || TYPE_META.unknown;
+  if (type === 'unknown') return null;
+  return (
+    <span className={`inline-flex items-center rounded-full font-semibold ${small ? 'px-1.5 py-0 text-xs' : 'px-2 py-0.5 text-xs'}`}
+      style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}30` }}>
+      {meta.label}
+    </span>
+  );
+}
+
+function VideoCard({ video, rank, showAge = true }) {
+  const pub    = video.published ? new Date(video.published) : null;
+  const age    = pub ? Math.floor((Date.now() - pub) / 86400000) : null;
+  const ageStr = age === null ? (video.publishedAgo || '') : age === 0 ? 'Today' : age === 1 ? 'Yesterday' : `${age}d ago`;
+  const timeStr = pub
+    ? pub.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+    : '';
+
+  return (
+    <a href={video.url} target="_blank" rel="noopener noreferrer"
+      className="group rounded-xl border overflow-hidden flex flex-col transition-shadow hover:shadow-md"
+      style={{ borderColor: 'var(--border)', background: 'var(--card)', textDecoration: 'none' }}>
+
+      {/* Thumbnail */}
+      <div className="relative overflow-hidden flex-shrink-0" style={{ paddingTop: '56.25%', background: '#111' }}>
+        <img src={video.thumbnail} alt={video.title}
+          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          onError={e => { e.target.src = `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`; }}
+        />
+        {rank && (
+          <span className="absolute top-2 left-2 rounded px-1.5 py-0.5 text-xs font-bold text-white"
+            style={{ background: 'rgba(0,0,0,0.75)' }}>#{rank}</span>
+        )}
+        {showAge && ageStr && ageStr !== 'Today' && (
+          <span className="absolute top-2 right-2 rounded px-1.5 py-0.5 text-xs font-semibold text-white"
+            style={{ background: 'rgba(0,0,0,0.65)' }}>{ageStr}</span>
+        )}
+        {/* Duration badge bottom-right */}
+        <DurationBadge durationStr={video.durationStr} type={video.type} />
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="rounded-full p-3" style={{ background: 'rgba(239,68,68,0.9)' }}>
+            <Play size={20} fill="white" style={{ color: 'white' }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Meta */}
+      <div className="p-2.5 flex flex-col gap-1 flex-1">
+        <p className="text-xs font-semibold leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>
+          {video.title}
+        </p>
+        <div className="flex items-center gap-2 mt-auto pt-1.5 flex-wrap">
+          {video.type && video.type !== 'unknown' && <TypeBadge type={video.type} small />}
+          {(video.views > 0 || video.viewsText) && (
+            <span className="text-xs flex items-center gap-0.5" style={{ color: 'var(--muted)' }}>
+              <Eye size={10} />{video.views > 0 ? video.views.toLocaleString('en-IN') : video.viewsText}
+            </span>
+          )}
+          {timeStr && (
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>{timeStr}</span>
+          )}
+          {!timeStr && video.publishedAgo && (
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>{video.publishedAgo}</span>
+          )}
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function UploadChart({ byDay }) {
+  const max = Math.max(...Object.values(byDay), 1);
+  return (
+    <div className="flex items-end gap-2 h-20">
+      {DAY_NAMES.map((name, i) => {
+        const val = byDay[i] || 0;
+        const pct = (val / max) * 100;
+        return (
+          <div key={i} className="flex flex-col items-center gap-1 flex-1">
+            <div className="w-full rounded-t-sm transition-all"
+              style={{ height: `${Math.max(pct, 4)}%`, background: pct > 50 ? '#ef4444' : '#ef444450', minHeight: 4 }} />
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>{name}</span>
+            <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{val}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HourUploadChart({ byHour }) {
+  const hours   = Array.from({ length: 24 }, (_, i) => i);
+  const counts  = hours.map(h => byHour[h] || 0);
+  const max     = Math.max(...counts, 1);
+  const peakH   = counts.indexOf(Math.max(...counts));
+  return (
+    <div>
+      <div className="flex items-end gap-0.5 h-16">
+        {hours.map(h => {
+          const val = byHour[h] || 0;
+          const pct = (val / max) * 100;
+          return (
+            <div key={h} title={`${String(h).padStart(2,'0')}:00 — ${val} uploads`}
+              className="flex-1 rounded-t-sm transition-all cursor-default"
+              style={{ height: `${Math.max(pct, 4)}%`, background: h === peakH ? '#ef4444' : '#ef444440', minHeight: 2 }} />
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-1">
+        {[0, 6, 12, 18, 23].map(h => (
+          <span key={h} className="text-xs" style={{ color: 'var(--muted)' }}>{String(h).padStart(2,'0')}</span>
+        ))}
+      </div>
+      {byHour[peakH] > 0 && (
+        <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+          Peak upload hour: <b style={{ color: '#ef4444' }}>{String(peakH).padStart(2,'0')}:00</b> ({byHour[peakH]} videos)
+        </p>
+      )}
+    </div>
+  );
+}
+
+const TYPE_FILTERS = [
+  { key: 'all',    label: 'All' },
+  { key: 'short',  label: 'Short',  color: '#16a34a' },
+  { key: 'medium', label: 'Medium', color: '#2563eb' },
+  { key: 'long',   label: 'Long',   color: '#7c3aed' },
+];
+
+function YouTubeTab({ user }) {
+  const [data,       setData]       = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
+  const [section,    setSection]    = useState('today'); // 'today' | 'recent'
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [sort,       setSort]       = useState('date');
+  const [search,     setSearch]     = useState('');
+  const [page,       setPage]       = useState(0);
+  const PER_PAGE = 15;
+
+  const load = useCallback(async (refresh = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await api.digitalYoutube(refresh);
+      setData(d);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const channel    = data?.channel     || {};
+  const stats      = data?.stats       || {};
+  const todayVids  = data?.today_videos || [];
+  const recentVids = data?.all_videos  || data?.videos || [];
+
+  // filtered today's videos by type
+  const todayFiltered = useMemo(() => {
+    if (typeFilter === 'all') return todayVids;
+    return todayVids.filter(v => v.videoType === typeFilter);
+  }, [todayVids, typeFilter]);
+
+  // filtered recent videos
+  const recentFiltered = useMemo(() => {
+    let v = recentVids;
+    if (typeFilter !== 'all') v = v.filter(x => x.videoType === typeFilter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      v = v.filter(x => (x.title || '').toLowerCase().includes(q));
+    }
+    if (sort === 'views') v = [...v].sort((a, b) => (b.views || 0) - (a.views || 0));
+    else v = [...v].sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0));
+    return v;
+  }, [recentVids, typeFilter, sort, search]);
+
+  const pageVids    = recentFiltered.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
+  const totalPages  = Math.ceil(recentFiltered.length / PER_PAGE);
+
+  useEffect(() => { setPage(0); }, [sort, search, typeFilter]);
+
+  const fetchedAt = data?.fetched_at
+    ? new Date(data.fetched_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+    : '';
+
+  const byType = stats.byType || {};
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Channel Header ── */}
+      <div className="rounded-2xl overflow-hidden relative"
+        style={{ background: 'linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)' }}>
+
+        {channel.banner && (
+          <div className="absolute inset-0 opacity-10"
+            style={{ backgroundImage: `url(${channel.banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        )}
+
+        <div className="relative px-6 py-5 flex flex-wrap items-center gap-5">
+          {/* Avatar */}
+          <div className="flex-shrink-0">
+            {channel.avatar
+              ? <img src={channel.avatar} alt={channel.name}
+                  className="w-16 h-16 rounded-full ring-2 ring-red-500 object-cover" />
+              : <div className="w-16 h-16 rounded-full flex items-center justify-center"
+                  style={{ background: '#ef4444' }}>
+                  <Youtube size={28} className="text-white" />
+                </div>
+            }
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-white font-bold text-xl">{channel.name || 'Rajasthan Patrika TV'}</h2>
+              <span className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                style={{ background: '#ef4444' }}>YouTube</span>
+            </div>
+            <p className="text-sm mt-0.5" style={{ color: '#94a3b8' }}>{channel.handle}</p>
+          </div>
+
+          {/* Quick stats */}
+          <div className="flex gap-5 flex-wrap">
+            {channel.subscribers && (
+              <div className="text-center">
+                <div className="text-white font-bold text-lg">{channel.subscribers}</div>
+                <div className="text-xs" style={{ color: '#94a3b8' }}>Subscribers</div>
+              </div>
+            )}
+            {stats.totalToday > 0 && (
+              <div className="text-center">
+                <div className="font-bold text-lg" style={{ color: '#f87171' }}>{stats.totalToday}</div>
+                <div className="text-xs" style={{ color: '#94a3b8' }}>Today's Videos</div>
+              </div>
+            )}
+            {stats.watchTimeStr && (
+              <div className="text-center">
+                <div className="font-bold text-lg" style={{ color: '#fb923c' }}>{stats.watchTimeStr}</div>
+                <div className="text-xs" style={{ color: '#94a3b8' }}>Watch Time Today</div>
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <a href={channel.url || 'https://www.youtube.com/@rajasthanpatrikatv'}
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-80"
+              style={{ background: '#ef4444' }}>
+              <Youtube size={13} />Visit Channel
+            </a>
+            <button onClick={() => load(true)} disabled={loading}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+              style={{ background: 'rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              {fetchedAt ? `Updated ${fetchedAt}` : 'Refresh'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Loading / Error ── */}
+      {loading && !data && (
+        <div className="rounded-xl border p-10 text-center" style={{ borderColor: 'var(--border)' }}>
+          <RefreshCw size={28} className="animate-spin mx-auto mb-3" style={{ color: '#ef4444' }} />
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Fetching YouTube channel data…</p>
+        </div>
+      )}
+      {error && !data && (
+        <div className="rounded-xl border p-6 text-center" style={{ borderColor: '#ef4444', background: '#fee2e215' }}>
+          <AlertCircle size={24} className="mx-auto mb-2" style={{ color: '#ef4444' }} />
+          <p className="text-sm font-medium" style={{ color: '#ef4444' }}>{error}</p>
+        </div>
+      )}
+
+      {data && (
+        <>
+          {/* ── Today's Summary stat cards ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <YTStatCard icon={Video}    color="#ef4444" label="Today's Videos" value={stats.totalToday || 0} accent />
+            <YTStatCard icon={Clock}    color="#f97316" label="Watch Time"      value={stats.watchTimeStr || '—'} sub="today" />
+            <YTStatCard icon={Play}     color={TYPE_META.short.color}  label="Short (< 3 min)"  value={byType.short  || 0} />
+            <YTStatCard icon={Play}     color={TYPE_META.medium.color} label="Medium (3–20 min)" value={byType.medium || 0} />
+            <YTStatCard icon={Play}     color={TYPE_META.long.color}   label="Long (> 20 min)"  value={byType.long   || 0} />
+          </div>
+
+          {/* ── Section tabs ── */}
+          <div className="flex items-center gap-1 rounded-xl border p-1 w-fit"
+            style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+            {[
+              { k: 'today',  l: `Today's Videos (${stats.totalToday || 0})` },
+              { k: 'recent', l: `Recent Videos (${recentVids.length})` },
+            ].map(s => (
+              <button key={s.k} onClick={() => setSection(s.k)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={{
+                  background: section === s.k ? '#ef4444' : 'transparent',
+                  color:      section === s.k ? 'white'   : 'var(--muted)',
+                }}>
+                {s.l}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Type filter pills ── */}
+          <div className="flex gap-2 flex-wrap">
+            {TYPE_FILTERS.map(f => (
+              <button key={f.key} onClick={() => setTypeFilter(f.key)}
+                className="px-3 py-1 rounded-full text-xs font-semibold border transition-all"
+                style={{
+                  background:   typeFilter === f.key ? (f.color || '#ef4444') : 'var(--card)',
+                  color:        typeFilter === f.key ? 'white' : (f.color || 'var(--muted)'),
+                  borderColor:  typeFilter === f.key ? (f.color || '#ef4444') : 'var(--border)',
+                }}>
+                {f.label}
+                {f.key !== 'all' && (
+                  <span className="ml-1 opacity-75">
+                    {f.key === 'short'  ? byType.short  || 0 :
+                     f.key === 'medium' ? byType.medium || 0 :
+                     f.key === 'long'   ? byType.long   || 0 : ''}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* ── TODAY'S VIDEOS ── */}
+          {section === 'today' && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+                  Today's Videos
+                  <span className="ml-2 text-xs font-normal" style={{ color: 'var(--muted)' }}>
+                    {todayFiltered.length} {typeFilter !== 'all' ? `${typeFilter}` : 'total'}
+                  </span>
+                </h3>
+              </div>
+
+              {todayFiltered.length > 0 ? (
+                <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {todayFiltered.map((v, i) => (
+                    <VideoCard key={v.id || i} video={v} rank={i + 1} />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border p-10 text-center" style={{ borderColor: 'var(--border)' }}>
+                  <Video size={28} className="mx-auto mb-2 opacity-20" />
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                    {typeFilter !== 'all'
+                      ? `No ${typeFilter} videos uploaded today.`
+                      : 'No videos uploaded today yet.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── RECENT VIDEOS ── */}
+          {section === 'recent' && (
+            <div>
+              {/* Controls */}
+              <div className="flex items-center gap-3 flex-wrap mb-4">
+                <h3 className="text-sm font-semibold flex-shrink-0" style={{ color: 'var(--text)' }}>
+                  Recent Videos
+                  <span className="ml-2 text-xs font-normal" style={{ color: 'var(--muted)' }}>
+                    {recentFiltered.length} {search || typeFilter !== 'all' ? 'matching' : 'total'}
+                  </span>
+                </h3>
+                <div className="flex-1" />
+                {/* Search */}
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--muted)' }} />
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search videos…"
+                    className="rounded-lg border pl-8 pr-3 py-1.5 text-xs w-44"
+                    style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--text)' }}
+                  />
+                </div>
+                {/* Sort */}
+                <div className="flex gap-1 rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                  {[{k:'date',l:'Latest'},{k:'views',l:'Top Views'}].map(s => (
+                    <button key={s.k} onClick={() => setSort(s.k)}
+                      className="px-3 py-1.5 text-xs font-medium transition-colors"
+                      style={{
+                        background: sort === s.k ? '#ef4444' : 'var(--card)',
+                        color:      sort === s.k ? 'white'   : 'var(--muted)',
+                      }}>
+                      {s.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {pageVids.length > 0 ? (
+                <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {pageVids.map((v, i) => (
+                    <VideoCard key={v.id || i} video={v}
+                      rank={sort === 'views' ? page * PER_PAGE + i + 1 : null} />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border p-8 text-center" style={{ borderColor: 'var(--border)' }}>
+                  <Video size={28} className="mx-auto mb-2 opacity-20" />
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                    {search || typeFilter !== 'all' ? 'No videos match your filters.' : 'No videos found.'}
+                  </p>
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-5">
+                  <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
+                    className="px-3 py-1.5 rounded-lg border text-xs font-medium disabled:opacity-40 transition-colors"
+                    style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--text)' }}>
+                    ← Prev
+                  </button>
+                  <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                    Page {page + 1} / {totalPages}
+                  </span>
+                  <button disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}
+                    className="px-3 py-1.5 rounded-lg border text-xs font-medium disabled:opacity-40 transition-colors"
+                    style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--text)' }}>
+                    Next →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Charts row ── */}
+          {(stats.byDay || stats.byHour) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {stats.byDay && (
+                <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <BarChart3 size={14} style={{ color: '#ef4444' }} />
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Uploads by Day of Week</span>
+                  </div>
+                  <UploadChart byDay={stats.byDay} />
+                </div>
+              )}
+              {stats.byHour && (
+                <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Clock size={14} style={{ color: '#ef4444' }} />
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Uploads by Hour (IST)</span>
+                  </div>
+                  <HourUploadChart byHour={stats.byHour} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {data.stale && (
+            <p className="text-xs text-center" style={{ color: 'var(--muted)' }}>
+              Showing cached data — live fetch failed.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1996,47 +2805,62 @@ const NEWS_CATS = [
   { key: 'education',     label: 'Education',     color: '#ca8a04' },
 ];
 
-function BreakingNewsTab() {
-  const [allNews,      setAllNews]      = useState([]);
-  const [sources,      setSources]      = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [err,          setErr]          = useState('');
-  const [newsSource,   setNewsSource]   = useState('all');
-  const [newsCategory, setNewsCategory] = useState('all');
+// Relative time: "just now", "5m ago", "2h ago"
+function relTime(dateStr) {
+  if (!dateStr) return null;
+  try {
+    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+    if (diff < 0)    return null;
+    if (diff < 60)   return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400)return `${Math.floor(diff / 3600)}h ago`;
+    return null;
+  } catch { return null; }
+}
 
-  const load = async () => {
+const HOURS_OPTIONS = [2, 4, 6, 12, 24];
+
+function BreakingNewsTab() {
+  const [allNews,    setAllNews]    = useState([]);
+  const [sources,    setSources]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [err,        setErr]        = useState('');
+  const [newsSource, setNewsSource] = useState('all');
+  const [hours,      setHours]      = useState(4);
+  const [lastFetch,  setLastFetch]  = useState(null);
+  const [tick,       setTick]       = useState(0); // forces re-render for relative times
+
+  const load = async (h = hours) => {
     setLoading(true); setErr('');
     try {
-      const res = await api.newsFeed(TODAY);
-      setAllNews(res.articles  || []);
-      setSources(res.sources   || []);
-    } catch (e) { setErr('Could not load news feed: ' + e.message); }
+      const res = await api.newsFeed(TODAY, { breaking: true, hours: h });
+      setAllNews(res.articles || []);
+      setSources(res.sources  || []);
+      setLastFetch(Date.now());
+    } catch (e) { setErr('Could not load breaking news: ' + e.message); }
     finally { setLoading(false); }
   };
 
+  // Auto-refresh every 90 seconds
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const t = setInterval(() => load(), 90 * 1000);
+    return () => clearInterval(t);
+  }, [hours]);
 
-  // Derived lists
-  const catMatch = (a, key) => {
-    const c = (a.category || '').toLowerCase();
-    return c === key || c === key + ' news' || c === key + 's';
-  };
+  // Tick every 30s to update relative times without refetch
+  useEffect(() => {
+    const t = setInterval(() => setTick(v => v + 1), 30 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  const sourceFiltered = newsSource === 'all'
+  const filtered = newsSource === 'all'
     ? allNews
     : allNews.filter(a => a.source === newsSource);
 
-  const filtered = newsCategory === 'all'
-    ? sourceFiltered
-    : sourceFiltered.filter(a => catMatch(a, newsCategory));
+  const handleHours = (h) => { setHours(h); load(h); };
 
-  const catCount = (key) => {
-    const base = newsSource === 'all' ? allNews : allNews.filter(a => a.source === newsSource);
-    if (key === 'all') return base.length;
-    return base.filter(a => catMatch(a, key)).length;
-  };
-
-  const catColor = (key) => NEWS_CATS.find(c => c.key === key)?.color || '#64748b';
+  const secsSinceFetch = lastFetch ? Math.round((Date.now() - lastFetch) / 1000) : null;
 
   return (
     <div className="space-y-4">
@@ -2045,117 +2869,129 @@ function BreakingNewsTab() {
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-4 py-3 border-b"
           style={{ borderColor: 'var(--border)', background: 'linear-gradient(90deg,#fef2f2,#fff1f2)' }}>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="rounded-lg p-1.5" style={{ background: '#fee2e2' }}>
               <Radio size={15} style={{ color: '#dc2626' }} />
             </div>
-            <span className="font-bold text-sm">Today's Live News Feed</span>
+            <span className="font-bold text-sm">Breaking News — All Channels</span>
             {!loading && allNews.length > 0 && (
               <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
                 style={{ background: '#dc2626', color: '#fff' }}>
-                {allNews.length} articles
+                {allNews.length} stories
               </span>
             )}
+            {/* Pulse dot — live indicator */}
+            <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#dc2626' }}>
+              <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#dc2626' }} />
+              LIVE
+            </span>
           </div>
-          <button className="btn-ghost p-1.5" onClick={load} title="Refresh">
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <div className="flex items-center gap-2">
+            {secsSinceFetch !== null && !loading && (
+              <span className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                refreshed {secsSinceFetch < 60 ? `${secsSinceFetch}s` : `${Math.floor(secsSinceFetch / 60)}m`} ago
+              </span>
+            )}
+            <button className="btn-ghost p-1.5" onClick={() => load()} title="Refresh now">
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
 
-        {/* ── Source filter pills ──────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-1.5 px-4 py-2.5 border-b" style={{ borderColor: 'var(--border)' }}>
-          <button
-            onClick={() => setNewsSource('all')}
-            className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
-            style={{
-              background: newsSource === 'all' ? '#374151' : 'var(--border)',
-              color:      newsSource === 'all' ? '#fff'    : 'var(--muted)',
-            }}>
-            All Sources
-            <span className="ml-1 opacity-80">({allNews.length})</span>
-          </button>
-          {sources.filter(s => s.count > 0).map(s => (
-            <button key={s.key}
-              onClick={() => setNewsSource(s.key)}
+        {/* ── Time window + Source filters ─────────────────────────────── */}
+        <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b" style={{ borderColor: 'var(--border)' }}>
+          {/* Time window pills */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-semibold uppercase mr-1" style={{ color: 'var(--muted)' }}>Last</span>
+            {HOURS_OPTIONS.map(h => (
+              <button key={h}
+                onClick={() => handleHours(h)}
+                className="px-2 py-0.5 rounded-full text-xs font-semibold transition-all"
+                style={{
+                  background: hours === h ? '#dc2626' : 'var(--border)',
+                  color:      hours === h ? '#fff'    : 'var(--muted)',
+                }}>
+                {h}h
+              </button>
+            ))}
+          </div>
+
+          <div className="w-px h-4" style={{ background: 'var(--border)' }} />
+
+          {/* Source filter */}
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setNewsSource('all')}
               className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
               style={{
-                background: newsSource === s.key ? s.color : 'var(--border)',
-                color:      newsSource === s.key ? '#fff'  : 'var(--muted)',
+                background: newsSource === 'all' ? '#374151' : 'var(--border)',
+                color:      newsSource === 'all' ? '#fff'    : 'var(--muted)',
               }}>
-              {s.name}
-              <span className="ml-1 opacity-80">({s.count})</span>
+              All ({allNews.length})
             </button>
-          ))}
-          {loading && sources.length === 0 && (
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>Loading sources…</span>
-          )}
-        </div>
-
-        {/* ── Category filter pills ────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-1.5 px-4 py-2 border-b" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }}>
-          {NEWS_CATS.map(c => {
-            const count = catCount(c.key);
-            if (c.key !== 'all' && count === 0) return null;
-            return (
-              <button key={c.key}
-                onClick={() => setNewsCategory(c.key)}
-                className="px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all"
+            {sources.filter(s => s.count > 0).map(s => (
+              <button key={s.key}
+                onClick={() => setNewsSource(s.key)}
+                className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
                 style={{
-                  background: newsCategory === c.key ? c.color : 'transparent',
-                  color:      newsCategory === c.key ? '#fff'  : 'var(--muted)',
-                  border: `1px solid ${newsCategory === c.key ? c.color : 'var(--border)'}`,
+                  background: newsSource === s.key ? s.color : 'var(--border)',
+                  color:      newsSource === s.key ? '#fff'  : 'var(--muted)',
                 }}>
-                {c.label}
-                {c.key !== 'all' && <span className="ml-1 opacity-70">({count})</span>}
+                {s.name} ({s.count})
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
 
-        {/* ── Feed ────────────────────────────────────────────────────────── */}
-        <div className="divide-y" style={{ borderColor: 'var(--border)', maxHeight: 560, overflowY: 'auto' }}>
+        {/* ── Live ticker feed ─────────────────────────────────────────── */}
+        <div className="divide-y" style={{ borderColor: 'var(--border)', maxHeight: 620, overflowY: 'auto' }}>
           {loading ? (
             <div className="p-4 space-y-2">
-              {[1,2,3,4,5,6,7,8].map(i => (
-                <div key={i} className="h-11 rounded-lg animate-pulse" style={{ background: 'var(--border)' }} />
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: 'var(--border)' }} />
               ))}
             </div>
           ) : err ? (
             <div className="p-4 text-sm" style={{ color: '#dc2626' }}>{err}</div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-sm" style={{ color: 'var(--muted)' }}>
-              No articles found. Try selecting a different source or category.
+            <div className="p-8 text-center">
+              <Radio size={28} className="mx-auto mb-3 opacity-20" />
+              <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>
+                No breaking news in the last {hours}h
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                Try extending the time window or refresh
+              </p>
             </div>
           ) : filtered.map((a, i) => {
-            const rawCat = (a.category || 'other').toLowerCase();
-            const catKey = rawCat.replace(' news', '').replace(/s$/, '').trim();
-            const color  = catColor(catKey) || catColor(rawCat);
+            const rel   = relTime(a.publish_date);
+            const isNew = rel === 'just now' || (rel && rel.endsWith('m ago') && parseInt(rel) <= 30);
             return (
               <div key={i}
-                className="flex items-start gap-3 px-4 py-2.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors"
+                style={isNew ? { background: '#fef2f218' } : {}}>
 
-                {/* Time */}
-                <div className="flex-shrink-0 text-center pt-0.5" style={{ minWidth: 38 }}>
-                  <div className="text-xs font-bold tabular-nums" style={{ color: a.source_color || '#dc2626' }}>
-                    {a.publish_time || '—'}
-                  </div>
-                  {a.publish_date && (
-                    <div className="text-[9px]" style={{ color: 'var(--muted)' }}>
-                      {a.publish_date.slice(5, 10)}
+                {/* LIVE / time column */}
+                <div className="flex-shrink-0 text-right pt-0.5" style={{ minWidth: 52 }}>
+                  {isNew ? (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded animate-pulse"
+                      style={{ background: '#dc2626', color: '#fff' }}>LIVE</span>
+                  ) : (
+                    <span className="text-[10px] tabular-nums font-medium" style={{ color: 'var(--muted)' }}>
+                      {rel || a.publish_time || '—'}
+                    </span>
+                  )}
+                  {a.publish_time && !isNew && (
+                    <div className="text-[9px] tabular-nums" style={{ color: 'var(--muted)', opacity: 0.7 }}>
+                      {a.publish_time}
                     </div>
                   )}
                 </div>
 
                 {/* Source badge */}
-                <span className="flex-shrink-0 mt-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded whitespace-nowrap"
-                  style={{ background: `${a.source_color || '#dc2626'}18`, color: a.source_color || '#dc2626' }}>
+                <span className="flex-shrink-0 mt-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md whitespace-nowrap"
+                  style={{ background: `${a.source_color || '#dc2626'}20`, color: a.source_color || '#dc2626' }}>
                   {a.source_name || a.source}
-                </span>
-
-                {/* Category badge */}
-                <span className="flex-shrink-0 mt-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded whitespace-nowrap"
-                  style={{ background: `${color}18`, color }}>
-                  {catKey || rawCat}
                 </span>
 
                 {/* Title */}
@@ -2169,15 +3005,30 @@ function BreakingNewsTab() {
                     : <p className="text-sm font-medium leading-snug line-clamp-2">{a.title}</p>
                   }
                 </div>
+
+                {/* External link icon */}
+                {a.url && (
+                  <a href={a.url} target="_blank" rel="noopener noreferrer"
+                    className="flex-shrink-0 mt-0.5 opacity-30 hover:opacity-80 transition-opacity">
+                    <ExternalLink size={12} style={{ color: 'var(--muted)' }} />
+                  </a>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* ── Footer count ─────────────────────────────────────────────── */}
+        {/* ── Footer ───────────────────────────────────────────────────── */}
         {!loading && filtered.length > 0 && (
-          <div className="px-4 py-2 border-t text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
-            Showing {filtered.length} of {allNews.length} articles · auto-refreshes every 5 min
+          <div className="px-4 py-2 border-t flex items-center justify-between text-xs"
+            style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+            <span>{filtered.length} breaking stories · last {hours}h · auto-refreshes every 90s</span>
+            <span className="flex items-center gap-1">
+              {sources.filter(s => s.count > 0).map(s => (
+                <span key={s.key} className="w-2 h-2 rounded-full inline-block"
+                  style={{ background: s.color }} title={s.name} />
+              ))}
+            </span>
           </div>
         )}
       </div>
@@ -2187,17 +3038,17 @@ function BreakingNewsTab() {
 
 // ── AI Insights Tab ───────────────────────────────────────────────────────────
 const INSIGHT_META = {
-  pace:    { icon: Gauge,       bg: '#dbeafe', fg: '#1d4ed8' },
-  uv:      { icon: TrendingUp,  bg: '#d1fae5', fg: '#047857' },
-  editor:  { icon: AlertCircle, bg: '#fee2e2', fg: '#b91c1c' },
-  star:    { icon: Award,       bg: '#fef3c7', fg: '#b45309' },
-  quality: { icon: Star,        bg: '#f3e8ff', fg: '#7c3aed' },
-  teams:   { icon: Users2,      bg: '#e0f2fe', fg: '#0369a1' },
-  admin:   { icon: ShieldAlert,  bg: '#fef9c3', fg: '#854d0e' },
-  speed:   { icon: Flame,       bg: '#ffedd5', fg: '#c2410c' },
-  today:   { icon: Activity,    bg: '#dbeafe', fg: '#1d4ed8' },
-  weekly:  { icon: BarChart3,   bg: '#d1fae5', fg: '#047857' },
-  pattern: { icon: Lightbulb,   bg: '#fef3c7', fg: '#b45309' },
+  pace:    { icon: Gauge,       bg: '#dbeafe', fg: '#1d4ed8', label: 'Pace'       },
+  uv:      { icon: TrendingUp,  bg: '#d1fae5', fg: '#047857', label: 'Traffic'    },
+  editor:  { icon: AlertCircle, bg: '#fee2e2', fg: '#b91c1c', label: 'Editors'    },
+  star:    { icon: Award,       bg: '#fef3c7', fg: '#b45309', label: 'Top Performer' },
+  quality: { icon: Star,        bg: '#f3e8ff', fg: '#7c3aed', label: 'Quality'    },
+  teams:   { icon: Users2,      bg: '#e0f2fe', fg: '#0369a1', label: 'Teams'      },
+  admin:   { icon: ShieldAlert, bg: '#fef9c3', fg: '#854d0e', label: 'Admin'      },
+  speed:   { icon: Flame,       bg: '#ffedd5', fg: '#c2410c', label: 'Speed'      },
+  today:   { icon: Activity,    bg: '#dbeafe', fg: '#1d4ed8', label: 'Today'     },
+  weekly:  { icon: BarChart3,   bg: '#d1fae5', fg: '#047857', label: 'Weekly'    },
+  pattern: { icon: Lightbulb,   bg: '#fef3c7', fg: '#b45309', label: 'Pattern'   },
 };
 
 const SEV_STYLE = {
@@ -2207,12 +3058,14 @@ const SEV_STYLE = {
   info:    { border: '#0891b2', bg: '#f0f9ff', dot: '#0891b2', label: 'Insight',    icon: Lightbulb    },
 };
 
-function InsightCard({ insight }) {
+function InsightCard({ insight, rank }) {
   const [open, setOpen] = useState(false);
-  const meta  = INSIGHT_META[insight.type] || INSIGHT_META.pace;
-  const sev   = SEV_STYLE[insight.severity] || SEV_STYLE.info;
-  const Icon  = meta.icon;
-  const SevIcon = sev.icon;
+  const meta    = INSIGHT_META[insight.type] || INSIGHT_META.pace;
+  const sev     = SEV_STYLE[insight.severity] || SEV_STYLE.info;
+  const Icon    = meta.icon;
+
+  const rankColors = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#8b5cf6'];
+  const rankColor  = rank ? rankColors[(rank - 1) % rankColors.length] : null;
 
   return (
     <div className="rounded-xl border overflow-hidden surface transition-all"
@@ -2220,15 +3073,27 @@ function InsightCard({ insight }) {
       {/* Card header */}
       <div className="flex items-start gap-3 p-4 cursor-pointer"
         onClick={() => setOpen(o => !o)}>
-        <div className="flex-shrink-0 rounded-lg p-2 mt-0.5" style={{ background: meta.bg }}>
-          <Icon size={16} style={{ color: meta.fg }} />
-        </div>
+        {rank ? (
+          <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm mt-0.5"
+            style={{ background: `${rankColor}18`, color: rankColor }}>
+            {rank}
+          </div>
+        ) : (
+          <div className="flex-shrink-0 rounded-lg p-2 mt-0.5" style={{ background: meta.bg }}>
+            <Icon size={16} style={{ color: meta.fg }} />
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
               style={{ background: sev.bg, color: sev.dot }}>
               {sev.label}
             </span>
+            {rank && (
+              <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--muted)' }}>
+                <Icon size={10} style={{ color: meta.fg }} /> {meta.label}
+              </span>
+            )}
           </div>
           <div className="font-semibold text-sm leading-snug">{insight.title}</div>
           <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>{insight.body}</div>
@@ -2324,7 +3189,7 @@ function AiInsightsTab({ user, canAdmin }) {
   const load = async (m) => {
     setLoading(true); setErr('');
     try {
-      const res = await api.aiInsights(m);
+      const res = await api.digitalAiInsights(m);
       setData(res);
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
@@ -2332,13 +3197,17 @@ function AiInsightsTab({ user, canAdmin }) {
 
   useEffect(() => { load(month); }, [month]);
 
-  const sevOrder = { alert: 0, warning: 1, success: 2, info: 3 };
-  const sorted   = [...(data?.insights || [])].sort((a, b) =>
-    (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9)
-  );
+  // top5 is server-ranked by impact score; fall back to severity-sort slice if absent
+  const top5 = data?.top5 || (() => {
+    const sevOrder = { alert: 0, warning: 1, success: 2, info: 3 };
+    return [...(data?.insights || [])]
+      .sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9))
+      .slice(0, 5)
+      .map((ins, i) => ({ ...ins, rank: i + 1 }));
+  })();
 
   const counts = { alert: 0, warning: 0, success: 0, info: 0 };
-  sorted.forEach(i => { counts[i.severity] = (counts[i.severity] || 0) + 1; });
+  top5.forEach(i => { counts[i.severity] = (counts[i.severity] || 0) + 1; });
 
   return (
     <div className="space-y-5">
@@ -2420,8 +3289,8 @@ function AiInsightsTab({ user, canAdmin }) {
         </div>
       )}
 
-      {/* Insight cards */}
-      {!loading && sorted.length === 0 && !err && (
+      {/* Top 5 Insight cards */}
+      {!loading && top5.length === 0 && !err && (
         <div className="text-center py-16" style={{ color: 'var(--muted)' }}>
           <Brain size={36} className="mx-auto mb-3 opacity-30" />
           <div className="font-medium">No insights available yet</div>
@@ -2429,19 +3298,25 @@ function AiInsightsTab({ user, canAdmin }) {
         </div>
       )}
 
-      {!loading && sorted.length > 0 && (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {sorted.map(insight => (
-            <InsightCard key={insight.id} insight={insight} />
+      {!loading && top5.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <Star size={14} style={{ color: '#d97706' }} />
+            <span className="text-sm font-semibold">Top {top5.length} Insights</span>
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>
+              — ranked by impact &amp; urgency from {data?.insights?.length || top5.length} signals
+            </span>
+          </div>
+          {top5.map(insight => (
+            <InsightCard key={insight.id} insight={insight} rank={insight.rank} />
           ))}
         </div>
       )}
 
       {/* Footer note */}
-      {!loading && sorted.length > 0 && (
+      {!loading && top5.length > 0 && (
         <div className="text-center text-xs py-2" style={{ color: 'var(--muted)' }}>
-          Insights are computed from your DB — story targets, Chartbeat data & breaking news logs.
-          Data refreshes on each page visit.
+          Scored from story targets, Chartbeat data &amp; breaking news logs · refreshes on each visit
         </div>
       )}
     </div>
@@ -2770,6 +3645,237 @@ function TeamLeaderTab({ user, canAdmin }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Alert Tab ─────────────────────────────────────────────────────────────────
+const SEV_META = {
+  critical: { label: 'Critical', bg: '#fef2f2', border: '#fca5a5', text: '#991b1b', badge: '#dc2626', icon: Flame },
+  warning:  { label: 'Warning',  bg: '#fffbeb', border: '#fcd34d', text: '#92400e', badge: '#d97706', icon: AlertCircle },
+  info:     { label: 'Info',     bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af', badge: '#2563eb', icon: Lightbulb },
+};
+
+function AlertTab({ canAdmin }) {
+  const [data, setData]           = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [err, setErr]             = useState(null);
+  const [lastFetch, setLastFetch] = useState(null);
+  const [, setTick]               = useState(0);
+  const [filter, setFilter]       = useState('all');
+
+  const now          = new Date();
+  const curMonth     = monthStr(now);
+  const totalDays    = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const elapsedDays  = now.getDate();
+  const monthPct     = Math.round((elapsedDays / totalDays) * 100);
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try {
+      const d = await api.digitalDashboard(curMonth);
+      setData(d);
+      setLastFetch(Date.now());
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []);
+  useEffect(() => { const t = setInterval(load, 5 * 60 * 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setTick(v => v + 1), 30000); return () => clearInterval(t); }, []);
+
+  const alerts = useMemo(() => {
+    if (!data?.users) return [];
+    const list = [];
+    const pace      = monthPct;
+    const minDays   = elapsedDays >= 5;
+
+    data.users.forEach(u => {
+      const hasTarget = u.uv_target > 0 || u.story_target > 0;
+      if (!hasTarget) {
+        list.push({ severity: 'info', user: u.name, team: u.team,
+          title: 'No Targets Set',
+          detail: `${u.name} has no monthly UV or story targets configured for ${curMonth}.` });
+        return;
+      }
+      if (!minDays) return;
+
+      if (u.uv_target > 0) {
+        const gap = pace - (u.uv_pct || 0);
+        if (gap >= 35)
+          list.push({ severity: 'critical', user: u.name, team: u.team,
+            title: 'UV Critically Behind',
+            detail: `${u.name}: UV at ${u.uv_pct ?? 0}% vs ${pace}% expected pace — ${gap}pp gap.` });
+        else if (gap >= 20)
+          list.push({ severity: 'warning', user: u.name, team: u.team,
+            title: 'UV Behind Pace',
+            detail: `${u.name}: UV at ${u.uv_pct ?? 0}% vs ${pace}% expected — ${gap}pp gap.` });
+      }
+
+      if (u.story_target > 0) {
+        const gap = pace - (u.story_pct || 0);
+        if (gap >= 35)
+          list.push({ severity: 'critical', user: u.name, team: u.team,
+            title: 'Stories Critically Behind',
+            detail: `${u.name}: Stories at ${u.story_pct ?? 0}% vs ${pace}% expected — ${gap}pp gap.` });
+        else if (gap >= 20)
+          list.push({ severity: 'warning', user: u.name, team: u.team,
+            title: 'Stories Behind Pace',
+            detail: `${u.name}: Stories at ${u.story_pct ?? 0}% vs ${pace}% expected — ${gap}pp gap.` });
+      }
+
+      if (u.pv_target > 0) {
+        const gap = pace - (u.pv_pct || 0);
+        if (gap >= 40)
+          list.push({ severity: 'warning', user: u.name, team: u.team,
+            title: 'Page Views Behind',
+            detail: `${u.name}: PV at ${u.pv_pct ?? 0}% vs ${pace}% expected — ${gap}pp gap.` });
+      }
+    });
+
+    (data.teams || []).forEach(t => {
+      if (!t.uv_target || !minDays || (t.members?.length || 0) < 2) return;
+      const gap = pace - (t.uv_pct || 0);
+      if (gap >= 35)
+        list.push({ severity: 'critical', user: null, team: t.team,
+          title: 'Team UV Critical',
+          detail: `Team "${t.team}" UV at ${t.uv_pct ?? 0}% vs ${pace}% expected (${t.members.length} members).` });
+      else if (gap >= 20)
+        list.push({ severity: 'warning', user: null, team: t.team,
+          title: 'Team UV Behind',
+          detail: `Team "${t.team}" UV at ${t.uv_pct ?? 0}% vs ${pace}% expected.` });
+    });
+
+    if (!minDays) {
+      list.push({ severity: 'info', user: null, team: null,
+        title: 'Month Just Started',
+        detail: `Only ${elapsedDays} day(s) elapsed. Pace-based alerts activate from day 5.` });
+    }
+
+    const order = { critical: 0, warning: 1, info: 2 };
+    return list.sort((a, b) => order[a.severity] - order[b.severity]);
+  }, [data, monthPct, elapsedDays, curMonth]);
+
+  const counts = useMemo(() => ({
+    critical: alerts.filter(a => a.severity === 'critical').length,
+    warning:  alerts.filter(a => a.severity === 'warning').length,
+    info:     alerts.filter(a => a.severity === 'info').length,
+  }), [alerts]);
+
+  const visible = filter === 'all' ? alerts : alerts.filter(a => a.severity === filter);
+
+  function ago(ms) {
+    if (!ms) return '';
+    const diff = Math.round((Date.now() - ms) / 60000);
+    return diff < 1 ? 'just now' : `${diff}m ago`;
+  }
+
+  if (loading && !data) return (
+    <div className="text-center py-16" style={{ color: 'var(--muted)' }}>
+      <RefreshCw size={24} className="animate-spin mx-auto mb-3" />
+      <div>Loading alerts…</div>
+    </div>
+  );
+
+  if (err) return (
+    <div className="text-center py-12" style={{ color: '#dc2626' }}>Error: {err}</div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="surface rounded-xl p-4 border flex flex-wrap items-center justify-between gap-3"
+        style={{ borderColor: 'var(--border)' }}>
+        <div>
+          <h2 className="font-bold text-base flex items-center gap-2">
+            <ShieldAlert size={16} style={{ color: '#ea580c' }} />
+            Alert Center
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            {curMonth} · Day {elapsedDays}/{totalDays} ({monthPct}% of month elapsed)
+            {lastFetch && <span> · Updated {ago(lastFetch)}</span>}
+          </p>
+        </div>
+        <button onClick={load} disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-opacity"
+          style={{ background: '#ea580c', color: '#fff', opacity: loading ? 0.6 : 1 }}>
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Severity filter pills */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          ['all',      'All',      counts.critical + counts.warning + counts.info, '#6b7280'],
+          ['critical', 'Critical', counts.critical,                                '#dc2626'],
+          ['warning',  'Warning',  counts.warning,                                 '#d97706'],
+          ['info',     'Info',     counts.info,                                    '#2563eb'],
+        ].map(([key, label, count, color]) => (
+          <button key={key} onClick={() => setFilter(key)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
+            style={{
+              background:  filter === key ? color : 'transparent',
+              color:       filter === key ? '#fff' : color,
+              borderColor: color,
+            }}>
+            {label}
+            <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+              style={{ background: filter === key ? 'rgba(255,255,255,0.25)' : `${color}22` }}>
+              {count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Alert list */}
+      {visible.length === 0 ? (
+        <div className="surface rounded-xl p-12 border text-center" style={{ borderColor: 'var(--border)' }}>
+          <CheckCircle size={40} className="mx-auto mb-3" style={{ color: '#16a34a' }} />
+          <div className="font-semibold text-base">All Clear</div>
+          <div className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
+            {filter === 'all' ? 'No alerts for this month so far.' : `No ${filter} alerts.`}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {visible.map((a, i) => {
+            const meta = SEV_META[a.severity];
+            const Icon = meta.icon;
+            return (
+              <div key={i} className="rounded-xl p-4 flex items-start gap-3"
+                style={{ background: meta.bg, border: `1px solid ${meta.border}`, borderLeft: `4px solid ${meta.badge}` }}>
+                <div className="rounded-lg p-1.5 flex-shrink-0 mt-0.5"
+                  style={{ background: `${meta.badge}18` }}>
+                  <Icon size={15} style={{ color: meta.badge }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-sm" style={{ color: meta.text }}>{a.title}</span>
+                    {a.user && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: `${meta.badge}18`, color: meta.text }}>
+                        {a.user}
+                      </span>
+                    )}
+                    {a.team && (
+                      <span className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(0,0,0,0.06)', color: 'var(--muted)' }}>
+                        {a.team}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: meta.text, opacity: 0.8 }}>{a.detail}</p>
+                </div>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5"
+                  style={{ background: meta.badge, color: '#fff' }}>
+                  {meta.label.toUpperCase()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

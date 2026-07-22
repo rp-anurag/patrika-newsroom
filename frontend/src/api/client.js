@@ -171,10 +171,18 @@ export const api = {
     request(`/digital/breaking-news?action=fetch-patrika&category=${category}`),
   fetchPatrikaByDate: (date) =>
     request(`/digital/breaking-news?action=fetch-by-date&date=${encodeURIComponent(date)}`),
-  newsFeed: (date) =>
-    request(`/digital/news-feed${date ? '?date=' + encodeURIComponent(date) : ''}`),
-  aiInsights: (month) =>
+  newsFeed: (date, { breaking = false, hours = 4 } = {}) => {
+    const p = new URLSearchParams();
+    if (date)    p.set('date',     date);
+    if (breaking) p.set('breaking', '1');
+    if (breaking) p.set('hours',    String(hours));
+    const qs = p.toString();
+    return request(`/digital/news-feed${qs ? '?' + qs : ''}`);
+  },
+  digitalAiInsights: (month) =>
     request(`/digital/ai-insights${month ? '?month=' + encodeURIComponent(month) : ''}`),
+  digitalYoutube: (refresh = false) =>
+    request(`/digital/youtube${refresh ? '?refresh=1' : ''}`),
   articleMeta: (url) =>
     request(`/digital/breaking-news?action=article-meta&url=${encodeURIComponent(url)}`),
   batchAuthors: (urls) =>
