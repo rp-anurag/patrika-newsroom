@@ -124,6 +124,7 @@ export const api = {
   alertsLive:   (state, branch) => request(`/alerts/live${state && state !== 'All' ? `?state=${encodeURIComponent(state)}${branch && branch !== 'All' ? `&branch=${encodeURIComponent(branch)}` : ''}` : branch && branch !== 'All' ? `?branch=${encodeURIComponent(branch)}` : ''}`),
   telegramLogs: (page = 1, limit = 50) => request(`/alerts/telegram-logs?page=${page}&limit=${limit}`),
   reports:      ()        => withFallback('/reports', { reports: [] }),
+  dashboardQcDetail: (days = 7) => request(`/dashboard/qc-detail?days=${days}`),
   generateReport: (type, params = {}) => {
     const p = new URLSearchParams({ type, ...params });
     return withFallback(`/reports?${p}`, { type, columns: [], rows: [], total: 0 });

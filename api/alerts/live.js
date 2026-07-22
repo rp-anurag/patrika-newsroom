@@ -75,7 +75,7 @@ module.exports = async function handler(req, res) {
   const nowLabel = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(11, 16);
 
   try {
-    const LEAVE_EXCL = `'P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF'`;
+    const LEAVE_EXCL = `'P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF','HCH','HEH','UNKNOWN'`;
 
     const [
       schedRows, rajRows, mpcgRows,
@@ -146,6 +146,7 @@ module.exports = async function handler(req, res) {
              FROM hrms_data h
              JOIN \`user\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
              WHERE h.att_date BETWEEN ? AND ? AND UPPER(TRIM(h.att_type)) NOT IN (${LEAVE_EXCL})
+               AND h.att_type IS NOT NULL AND UPPER(TRIM(h.att_type)) != ''
                AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
                ${fState ? 'AND u.State = ?' : ''} ${fBranch ? 'AND u.Branch = ?' : ''}
              GROUP BY u.Branch ORDER BY cnt DESC LIMIT 5`,
@@ -169,6 +170,7 @@ module.exports = async function handler(req, res) {
              FROM hrms_data h
              JOIN \`user\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
              WHERE h.att_date IN (?, ?) AND UPPER(TRIM(h.att_type)) NOT IN (${LEAVE_EXCL})
+               AND h.att_type IS NOT NULL AND UPPER(TRIM(h.att_type)) != ''
                AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
                ${fState ? 'AND u.State = ?' : ''} ${fBranch ? 'AND u.Branch = ?' : ''}
              GROUP BY u.pan_no, u.EMPNAME, u.Branch HAVING days >= 2

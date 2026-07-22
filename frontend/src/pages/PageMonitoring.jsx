@@ -9,7 +9,7 @@ import {
   Send, ClipboardList,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as MapTooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useApp } from '../context/AppContext.jsx';
 import { api } from '../api/client.js';
@@ -360,7 +360,7 @@ function QCTab({ data }) {
 // ── FlyTo: re-centers the parent MapContainer when lat/lng change ─────────────
 function FlyTo({ lat, lng }) {
   const map = useMap();
-  useEffect(() => { if (lat && lng) map.flyTo([lat, lng], 14, { duration: 0.8 }); }, [lat, lng]);
+  useEffect(() => { if (lat && lng) map.flyTo([lat, lng], 15, { duration: 1.0 }); }, [lat, lng]);
   return null;
 }
 
@@ -749,96 +749,150 @@ function VisitsTab({ data, date }) {
           {/* Detail panel — 2/5 width */}
           <div className="lg:col-span-2">
             {selected ? (
-              <div className="rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                {/* Info header */}
-                <div className="p-3" style={{ background: 'var(--bg)' }}>
-                  <div className="font-bold text-sm mb-0.5">{selected.name}</div>
-                  <div className="text-xs" style={{ color: 'var(--muted)' }}>{selected.branch} · {selected.state}</div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div style={{ color: 'var(--muted)' }}>In</div>
-                      <div className="font-mono font-semibold">{selected.in_time  || '—'}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--muted)' }}>Out</div>
-                      <div className="font-mono font-semibold">{selected.out_time || '—'}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--muted)' }}>Duration</div>
-                      <div className="font-semibold" style={{ color: '#16a34a' }}>{fmtDuration(selected.dur_min)}</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs">
-                    <span style={{ color: 'var(--muted)' }}>Purpose: </span>{selected.purpose}
-                  </div>
-                  {selected.transport && (
-                    <div className="text-xs"><span style={{ color: 'var(--muted)' }}>Transport: </span>{selected.transport}</div>
-                  )}
-                  {selected.label && (
-                    <div className="text-xs">
-                      <span style={{ color: 'var(--muted)' }}>Label: </span>
-                      <span className="font-semibold" style={{ color: isHomeOffice(selected.label) ? '#dc2626' : 'var(--text)' }}>
-                        {selected.label}
-                      </span>
-                    </div>
-                  )}
-                  {selected.lat && geoNames[geoKey(selected.lat, selected.lng)] && (
-                    <div className="mt-1 text-xs font-semibold" style={{ color: 'var(--brand)' }}>
-                      <MapPin size={11} className="inline mr-1" />
-                      {geoNames[geoKey(selected.lat, selected.lng)]}
-                    </div>
-                  )}
-                  {selected.location && (
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--muted)', marginLeft: 15 }}>
-                      {selected.location}
-                    </div>
-                  )}
-                  {selected.lat && (
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--muted)', marginLeft: 15 }}>
-                      {selected.lat.toFixed(5)}, {selected.lng.toFixed(5)}
-                    </div>
-                  )}
-                </div>
+              <div className="rounded-2xl overflow-hidden shadow-lg border" style={{ borderColor: 'var(--border)' }}>
 
-                {/* Mini-map */}
+                {/* ── Map (hero) ─────────────────────────────────────────── */}
                 {selected.lat ? (
-                  <div style={{ height: 220 }}>
+                  <div style={{ height: 310, position: 'relative' }}>
                     <MapContainer
+                      key={`${selected.lat}-${selected.lng}`}
                       center={[selected.lat, selected.lng]}
-                      zoom={14}
+                      zoom={13}
                       style={{ height: '100%', width: '100%' }}
-                      zoomControl={false}
-                      scrollWheelZoom={false}
+                      zoomControl={true}
+                      scrollWheelZoom={true}
+                      attributionControl={false}
                     >
                       <TileLayer
-                        attribution='&copy; OpenStreetMap'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                        subdomains="abcd"
+                        maxZoom={19}
                       />
                       <FlyTo lat={selected.lat} lng={selected.lng} />
+                      {/* Outer glow ring */}
                       <CircleMarker
                         center={[selected.lat, selected.lng]}
-                        radius={10}
-                        pathOptions={{ fillColor: '#d71920', fillOpacity: 0.9, color: '#fff', weight: 2 }}
+                        radius={22}
+                        pathOptions={{ fillColor: '#d71920', fillOpacity: 0.12, color: '#d71920', weight: 1, opacity: 0.35 }}
+                      />
+                      {/* Mid ring */}
+                      <CircleMarker
+                        center={[selected.lat, selected.lng]}
+                        radius={14}
+                        pathOptions={{ fillColor: '#d71920', fillOpacity: 0.2, color: '#d71920', weight: 1.5, opacity: 0.5 }}
+                      />
+                      {/* Core pin */}
+                      <CircleMarker
+                        center={[selected.lat, selected.lng]}
+                        radius={8}
+                        pathOptions={{ fillColor: '#d71920', fillOpacity: 1, color: '#fff', weight: 2.5 }}
                       >
                         <Popup>
                           <b>{selected.name}</b><br />
                           {selected.label || selected.location || ''}
                         </Popup>
+                        {(geoNames[geoKey(selected.lat, selected.lng)] || selected.location) && (
+                          <MapTooltip permanent direction="top" offset={[0, -12]}
+                            className="visit-map-tooltip">
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>
+                              {geoNames[geoKey(selected.lat, selected.lng)] || selected.location}
+                            </span>
+                            {geoNames[geoKey(selected.lat, selected.lng)] && selected.location && (
+                              <div style={{ fontWeight: 400, fontSize: 11, opacity: 0.75, marginTop: 1 }}>
+                                {selected.location.split(',').slice(0, 2).join(',')}
+                              </div>
+                            )}
+                          </MapTooltip>
+                        )}
                       </CircleMarker>
                     </MapContainer>
+
+                    {/* Coordinates badge — bottom-left overlay */}
+                    {selected.lat && (
+                      <div style={{
+                        position: 'absolute', bottom: 8, left: 8, zIndex: 1000,
+                        background: 'rgba(0,0,0,0.62)', color: '#fff',
+                        fontSize: 10, padding: '3px 7px', borderRadius: 6,
+                        fontFamily: 'monospace', letterSpacing: '0.02em', backdropFilter: 'blur(4px)',
+                      }}>
+                        {selected.lat.toFixed(5)}, {selected.lng.toFixed(5)}
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center py-8 gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-                    <MapPin size={16} />
-                    No GPS data for this visit
+                  <div className="flex flex-col items-center justify-center gap-2"
+                    style={{ height: 180, background: 'var(--bg)', color: 'var(--muted)' }}>
+                    <MapPin size={28} className="opacity-30" />
+                    <span className="text-xs">No GPS data for this visit</span>
                   </div>
                 )}
+
+                {/* ── Info strip ─────────────────────────────────────────── */}
+                <div className="p-3 space-y-2" style={{ background: 'var(--card)' }}>
+                  {/* Name + branch */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-sm leading-tight">{selected.name}</div>
+                      <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                        {selected.branch}{selected.state ? ` · ${selected.state}` : ''}
+                      </div>
+                    </div>
+                    {selected.label && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
+                        style={isHomeOffice(selected.label)
+                          ? { background: '#dc262618', color: '#dc2626' }
+                          : { background: 'var(--border)', color: 'var(--muted)' }}>
+                        {selected.label}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* In / Out / Duration */}
+                  <div className="grid grid-cols-3 gap-1 text-center">
+                    {[
+                      { label: 'In',       val: selected.in_time  || '—', mono: true },
+                      { label: 'Out',      val: selected.out_time || '—', mono: true },
+                      { label: 'Duration', val: fmtDuration(selected.dur_min), color: '#16a34a' },
+                    ].map(({ label, val, mono, color }) => (
+                      <div key={label} className="rounded-lg py-1.5 px-1"
+                        style={{ background: 'var(--bg)' }}>
+                        <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>{label}</div>
+                        <div className={`text-sm font-bold${mono ? ' font-mono' : ''}`}
+                          style={{ color: color || 'var(--text)' }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Location */}
+                  {(geoNames[geoKey(selected.lat, selected.lng)] || selected.location) && (
+                    <div className="flex items-start gap-1 text-xs" style={{ color: 'var(--muted)' }}>
+                      <MapPin size={11} className="shrink-0 mt-0.5" style={{ color: 'var(--brand)' }} />
+                      <span>
+                        {geoNames[geoKey(selected.lat, selected.lng)] && (
+                          <span className="font-semibold" style={{ color: 'var(--brand)' }}>
+                            {geoNames[geoKey(selected.lat, selected.lng)]}
+                            {selected.location ? ' · ' : ''}
+                          </span>
+                        )}
+                        {selected.location}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Purpose / Transport row */}
+                  {(selected.purpose || selected.transport) && (
+                    <div className="flex gap-3 text-xs flex-wrap" style={{ color: 'var(--muted)' }}>
+                      {selected.purpose   && <span><span className="font-medium" style={{ color: 'var(--text)' }}>Purpose:</span> {selected.purpose}</span>}
+                      {selected.transport && <span><span className="font-medium" style={{ color: 'var(--text)' }}>Transport:</span> {selected.transport}</span>}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full py-12 gap-2 rounded-xl border"
+              <div className="flex flex-col items-center justify-center h-full py-16 gap-3 rounded-2xl border"
                 style={{ borderColor: 'var(--border)', color: 'var(--muted)', borderStyle: 'dashed' }}>
-                <MapPin size={24} />
-                <p className="text-xs">Click a reporter to see<br />visit details and location</p>
+                <MapPin size={32} className="opacity-20" />
+                <p className="text-xs text-center">Click a reporter to see<br />visit details and location</p>
               </div>
             )}
           </div>

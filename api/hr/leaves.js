@@ -10,8 +10,8 @@ const { query }       = require('../_lib/mysql');
 const { requireRole } = require('../_lib/auth');
 const { setCors, handleOptions } = require('../_lib/cors');
 
-// Same as grading-auto.js — records with these types are "on duty"
-const PRESENT_TYPES = ['P', 'MP', 'WFH', 'OD', 'T', 'TL', 'SU', 'ES', 'SPL', 'WOP', 'PH', 'WOHP', 'H', 'WO', 'A', 'CF'];
+// Records with these types are excluded from the leave register (on-duty or non-leave codes)
+const PRESENT_TYPES = ['P', 'MP', 'WFH', 'OD', 'T', 'TL', 'SU', 'ES', 'SPL', 'WOP', 'PH', 'WOHP', 'H', 'WO', 'A', 'CF', 'HCH', 'HEH', 'UNKNOWN'];
 
 module.exports = async function handler(req, res) {
   setCors(res);
@@ -68,6 +68,8 @@ module.exports = async function handler(req, res) {
       JOIN \`user\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
       WHERE h.att_date BETWEEN ? AND ?
         AND UPPER(TRIM(h.att_type)) NOT IN (${notInClause})
+        AND UPPER(TRIM(h.att_type)) != ''
+        AND h.att_type IS NOT NULL
         AND ${userWhere.join(' AND ')}
       ORDER BY h.att_date ASC, u.EMPNAME ASC
     `, [start, end, ...PRESENT_TYPES.map(t => t.toUpperCase()), ...userParams]);

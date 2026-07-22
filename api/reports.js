@@ -354,7 +354,7 @@ async function reportPressRelease(req, res, filterState, filterBranch) {
 }
 
 /* ── 8. Leave Register ───────────────────────────────────────────────────── */
-const PRESENT_TYPES = ['P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF'];
+const PRESENT_TYPES = ['P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF','HCH','HEH','UNKNOWN'];
 const LEAVE_LABELS  = {
   CL:'Casual Leave', EL:'Earned Leave', SL:'Sick Leave', ML:'Maternity Leave',
   PL:'Privilege Leave', LWP:'Leave Without Pay', LW:'Leave Without Pay',
@@ -373,7 +373,7 @@ async function reportLeaves(req, res, filterState, filterBranch) {
   const to   = req.query.to   || daysAgo(2);
 
   const notIn  = PRESENT_TYPES.map(() => '?').join(',');
-  const where  = ['h.att_date BETWEEN ? AND ?', `UPPER(TRIM(h.att_type)) NOT IN (${notIn})`];
+  const where  = ['h.att_date BETWEEN ? AND ?', `UPPER(TRIM(h.att_type)) NOT IN (${notIn})`, 'h.att_type IS NOT NULL', "UPPER(TRIM(h.att_type)) != ''"];
   const params = [from, to, ...PRESENT_TYPES];
   if (filterState)  { where.push('u.State = ?');  params.push(filterState); }
   if (filterBranch) { where.push('u.Branch = ?'); params.push(filterBranch); }

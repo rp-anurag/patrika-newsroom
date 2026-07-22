@@ -199,6 +199,7 @@ app.all('/api/users',                 h('./api/users'));
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 app.all('/api/dashboard',             h('./api/dashboard'));
+app.get('/api/dashboard/qc-detail',   h('./api/dashboard/qc-detail'));
 
 // ── Editorial / Production / Pages / Reports ──────────────────────────────────
 app.all('/api/editorial/feeds',       h('./api/editorial/feeds'));   // must be before /api/editorial

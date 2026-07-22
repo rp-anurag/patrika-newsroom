@@ -129,19 +129,16 @@ export default function Dashboard() {
   const [detailModal, setDetailModal] = useState(null); // 'qc' | 'delays' | null
   const [qcDetail, setQcDetail]             = useState(null);
   const [qcDetailLoading, setQcDetailLoading] = useState(false);
+  const [qcLightbox, setQcLightbox]           = useState(null); // photo_url string
+  const [qcSevFilter, setQcSevFilter]         = useState('all');
 
   const openQcDetail = () => {
     setDetailModal('qc');
-    if (qcDetail) return; // already fetched for this filter set
+    if (qcDetail) return;
     setQcDetailLoading(true);
-    const toIST = ms => new Date(ms + 5.5 * 3600000).toISOString().slice(0, 10);
-    // Note: qc_review.state is always empty, so no state filter here (it would return 0 rows)
-    api.generateReport('qc', {
-      from: toIST(Date.now() - 7 * 864e5),
-      to:   toIST(Date.now() - 864e5),
-    })
+    api.dashboardQcDetail(7)
       .then(r => setQcDetail(r))
-      .catch(() => setQcDetail({ columns: [], rows: [] }))
+      .catch(() => setQcDetail({ items: [] }))
       .finally(() => setQcDetailLoading(false));
   };
 
@@ -589,33 +586,169 @@ export default function Dashboard() {
       </div>
 
       {/* ── QC Mistakes detail modal ────────────────────────────────────────── */}
-      {detailModal === 'qc' && (
-        <DetailModal title="QC Mistakes — Last 7 Days" onClose={() => setDetailModal(null)}>
-          {qcDetailLoading ? (
-            <div className="flex items-center justify-center py-12 gap-2" style={{ color: 'var(--muted)' }}>
-              <Loader2 size={18} className="animate-spin" /> Loading…
-            </div>
-          ) : !qcDetail?.rows?.length ? (
-            <EmptyState msg="No QC mistakes recorded in the last 7 days" />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
-                    {qcDetail.columns.map(c => <th key={c} className="pb-2 pr-3 font-medium whitespace-nowrap">{c}</th>)}
-                  </tr>
-                </thead>
-                <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
-                  {qcDetail.rows.map((row, i) => (
-                    <tr key={i}>
-                      {row.map((cell, j) => <td key={j} className="py-2 pr-3 text-xs align-top">{cell === '' || cell == null ? '—' : String(cell)}</td>)}
-                    </tr>
+      {detailModal === 'qc' && (() => {
+        const SEV_CFG = {
+          high:    { label: 'High',    color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+          medium:  { label: 'Medium',  color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+          low:     { label: 'Low',     color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+          default: { label: '—',       color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+        };
+        const allItems = qcDetail?.items || [];
+        const filteredItems = qcSevFilter === 'all' ? allItems : allItems.filter(r => r.severity === qcSevFilter);
+        const counts = { high: 0, medium: 0, low: 0 };
+        allItems.forEach(r => { if (counts[r.severity] !== undefined) counts[r.severity]++; });
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setDetailModal(null)} />
+            <div className="relative z-10 flex flex-col w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"
+              style={{ maxHeight: '92vh', background: 'var(--card)' }}>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 shrink-0"
+                style={{ background: 'linear-gradient(135deg,#7f1d1d,#dc2626)', color: '#fff' }}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={18} />
+                    <span className="font-bold text-lg">QC Mistakes — Last 7 Days</span>
+                  </div>
+                  {qcDetail && (
+                    <p className="text-xs mt-0.5 opacity-80">{qcDetail.from} to {qcDetail.to} · {allItems.length} records</p>
+                  )}
+                </div>
+                <button onClick={() => setDetailModal(null)}
+                  className="rounded-full p-1.5 transition-opacity hover:opacity-70"
+                  style={{ background: 'rgba(255,255,255,0.15)' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Severity filter pills */}
+              {!qcDetailLoading && allItems.length > 0 && (
+                <div className="flex items-center gap-2 px-5 py-3 shrink-0 flex-wrap"
+                  style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+                  {[
+                    { key: 'all',    label: `All (${allItems.length})`, color: '#64748b' },
+                    { key: 'high',   label: `High (${counts.high})`,   color: '#dc2626' },
+                    { key: 'medium', label: `Medium (${counts.medium})`, color: '#d97706' },
+                    { key: 'low',    label: `Low (${counts.low})`,     color: '#16a34a' },
+                  ].map(f => (
+                    <button key={f.key} onClick={() => setQcSevFilter(f.key)}
+                      className="px-3 py-1 rounded-full text-xs font-semibold border transition-all"
+                      style={{
+                        background:  qcSevFilter === f.key ? f.color : 'var(--card)',
+                        color:       qcSevFilter === f.key ? '#fff'  : f.color,
+                        borderColor: f.color,
+                      }}>
+                      {f.label}
+                    </button>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
+
+              {/* Body */}
+              <div className="overflow-y-auto flex-1 p-4">
+                {qcDetailLoading ? (
+                  <div className="flex items-center justify-center py-16 gap-2" style={{ color: 'var(--muted)' }}>
+                    <Loader2 size={20} className="animate-spin" /> Loading QC records…
+                  </div>
+                ) : filteredItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--muted)' }}>
+                    <AlertCircle size={32} className="opacity-20" />
+                    <p className="text-sm">No QC mistakes recorded in the last 7 days</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {filteredItems.map(item => {
+                      const sev = SEV_CFG[item.severity] || SEV_CFG.default;
+                      return (
+                        <div key={item.id} className="rounded-xl border overflow-hidden flex flex-col"
+                          style={{ borderColor: sev.border, background: 'var(--card)' }}>
+
+                          {/* Severity strip + meta */}
+                          <div className="flex items-center justify-between px-3 py-2"
+                            style={{ background: sev.bg, borderBottom: `1px solid ${sev.border}` }}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                                style={{ background: sev.color, color: '#fff' }}>
+                                {sev.label}
+                              </span>
+                              {item.edition && (
+                                <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
+                                  {item.edition}
+                                </span>
+                              )}
+                              {item.pullout && (
+                                <span className="text-xs" style={{ color: 'var(--muted)' }}>· {item.pullout}</span>
+                              )}
+                            </div>
+                            <span className="text-xs shrink-0" style={{ color: 'var(--muted)' }}>{item.date}</span>
+                          </div>
+
+                          <div className="p-3 flex gap-3 flex-1">
+                            {/* Mistake image */}
+                            {item.photo_url && (
+                              <div className="shrink-0 cursor-pointer" onClick={() => setQcLightbox(item.photo_url)}>
+                                <img
+                                  src={item.photo_url}
+                                  alt="Mistake"
+                                  className="rounded-lg object-cover border"
+                                  style={{ width: 90, height: 90, borderColor: 'var(--border)' }}
+                                  onError={e => { e.target.style.display = 'none'; }}
+                                />
+                                <p className="text-xs text-center mt-1" style={{ color: '#2563eb' }}>Click to enlarge</p>
+                              </div>
+                            )}
+
+                            {/* Details */}
+                            <div className="flex-1 min-w-0 space-y-1.5">
+                              {item.category && (
+                                <span className="inline-block text-xs px-2 py-0.5 rounded font-medium"
+                                  style={{ background: 'var(--border)', color: 'var(--muted)' }}>
+                                  {item.category}
+                                </span>
+                              )}
+                              <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+                                {item.mistake || '—'}
+                              </p>
+                              {item.mistakes > 1 && (
+                                <p className="text-xs font-bold" style={{ color: sev.color }}>
+                                  {item.mistakes} mistakes
+                                </p>
+                              )}
+                              {item.remark && (
+                                <p className="text-xs italic" style={{ color: 'var(--muted)' }}>{item.remark}</p>
+                              )}
+                              {(item.responsible_1 || item.responsible_2) && (
+                                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                                  Responsible: {[item.responsible_1, item.responsible_2].filter(Boolean).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-        </DetailModal>
+          </div>
+        );
+      })()}
+
+      {/* ── QC Image Lightbox ────────────────────────────────────────────────── */}
+      {qcLightbox && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80"
+          onClick={() => setQcLightbox(null)}>
+          <button className="absolute top-4 right-4 rounded-full p-2"
+            style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }}>
+            <X size={20} />
+          </button>
+          <img src={qcLightbox} alt="QC Mistake"
+            className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()} />
+        </div>
       )}
 
       {/* ── Delayed Editions detail modal ───────────────────────────────────── */}

@@ -165,7 +165,7 @@ module.exports = async function handler(req, res) {
              [trend7Str, ydayStr, ...qcParams]).catch(() => [{}]),
 
       // 6. QC 7-day trend
-      query(`SELECT DATE_FORMAT(entrydate, '%Y-%m-%d') AS d, SUM(no_of_mistake) AS mistakes
+      query(`SELECT DATE_FORMAT(entrydate, '%Y-%m-%d') AS d, COUNT(*) AS mistakes
              FROM qc_review WHERE entrydate BETWEEN ? AND ?${qcExtra}
              GROUP BY DATE_FORMAT(entrydate, '%Y-%m-%d') ORDER BY d ASC`,
              [trend7Str, ydayStr, ...qcParams]).catch(() => []),
@@ -246,7 +246,8 @@ module.exports = async function handler(req, res) {
              FROM hrms_data h
              JOIN \`${TABLE}\` u ON UPPER(TRIM(u.pan_no)) = UPPER(TRIM(h.pan_no))
              WHERE h.att_date BETWEEN ? AND ?
-               AND UPPER(TRIM(h.att_type)) NOT IN ('P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF')
+               AND UPPER(TRIM(h.att_type)) NOT IN ('P','MP','WFH','OD','T','TL','SU','ES','SPL','WOP','PH','WOHP','H','WO','A','CF','HCH','HEH','UNKNOWN')
+               AND h.att_type IS NOT NULL AND UPPER(TRIM(h.att_type)) != ''
                AND (u.is_emp_working = 1 OR u.Status IN ('Working','Active'))
                ${filterState  ? 'AND u.State = ?'  : ''}
                ${filterBranch ? 'AND u.Branch = ?' : ''}
@@ -361,7 +362,7 @@ module.exports = async function handler(req, res) {
         reporterStories:  Number(reporterTarget[0]?.total_stories   || 0),
         fieldStaffTotal:  Number(reporterTarget[0]?.total_reporters || 0),
         visits:          Number(visitsToday[0]?.cnt || 0),
-        qcMistakes:   Number(qcToday[0]?.mistakes || 0),
+        qcMistakes:   Number(qcToday[0]?.checks || 0),
         legal:        Number(legalRows[0]?.cnt || 0),
         alerts:       Number(alertRows[0]?.cnt || 0),
         editions:     editionDelays.length,

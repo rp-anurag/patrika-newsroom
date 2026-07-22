@@ -60,3 +60,21 @@ body {
 .animate-rise { animation: rise .35s cubic-bezier(.2,.7,.2,1) both; }
 
 .brand-bar { background: linear-gradient(90deg, #d71920 0%, #a30e13 60%, #c9a227 100%); }
+
+/* Leaflet visit-map tooltip */
+.visit-map-tooltip {
+  background: #fff !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18) !important;
+  padding: 5px 10px !important;
+  color: #1a1011 !important;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.visit-map-tooltip::before { display: none !important; }
+.dark .visit-map-tooltip {
+  background: #1d1817 !important;
+  color: #f3ede6 !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.45) !important;
+}
