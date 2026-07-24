@@ -1,7 +1,7 @@
 // Minimal bilingual dictionary. Add keys as the app grows.
 export const dict = {
   en: {
-    appName: 'Patrika Newsroom Intelligence',
+    appName: 'PulsePatrika',
     tagline: 'AI-Powered Monitoring & Analytics',
     login: 'Sign In', logout: 'Sign Out', role: 'Role', edition: 'Edition',
     username: 'Username', password: 'Password', signingIn: 'Signing in…',
@@ -22,7 +22,7 @@ export const dict = {
     }
   },
   hi: {
-    appName: 'पत्रिका न्यूज़रूम इंटेलिजेंस',
+    appName: 'PulsePatrika',
     tagline: 'एआई-संचालित निगरानी और एनालिटिक्स',
     login: 'साइन इन', logout: 'साइन आउट', role: 'भूमिका', edition: 'संस्करण',
     username: 'उपयोगकर्ता नाम', password: 'पासवर्ड', signingIn: 'साइन इन हो रहा है…',

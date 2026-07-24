@@ -1,6 +1,6 @@
 """
-Patrika Newsroom Intelligence - AI Microservice
-================================================
+PulsePatrika - AI Microservice
+==============================
 FastAPI service that powers the AI features of the newsroom platform.
 
 This is a SCAFFOLD. Each endpoint returns a sensible, well-structured

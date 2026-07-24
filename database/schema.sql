@@ -1,4 +1,4 @@
--- Patrika Newsroom Intelligence — MySQL schema
+-- PulsePatrika — MySQL schema
 -- Run:  mysql -u root -p < database/schema.sql
 SET NAMES utf8mb4;
 CREATE DATABASE IF NOT EXISTS patrika_newsroom CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

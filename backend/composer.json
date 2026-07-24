@@ -1,6 +1,6 @@
 {
   "name": "patrika/newsroom-backend",
-  "description": "Patrika Newsroom Intelligence — PHP REST API",
+  "description": "PulsePatrika — PHP REST API",
   "type": "project",
   "require": { "php": ">=8.0", "ext-pdo": "*", "ext-json": "*" },
   "autoload": { "psr-4": { "App\\": "src/" } }

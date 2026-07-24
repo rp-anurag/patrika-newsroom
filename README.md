@@ -1,4 +1,4 @@
-# Patrika Newsroom Intelligence
+# PulsePatrika
 
 An AI-powered newspaper monitoring & analytics platform — editorial planning,
 production tracking, page monitoring, HR & retirement alerts, legal case

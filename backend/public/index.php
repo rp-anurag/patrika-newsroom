@@ -1,6 +1,6 @@
 <?php
 /**
- * Patrika Newsroom Intelligence — API front controller.
+ * PulsePatrika — API front controller.
  * All /api/* requests are routed here via .htaccess.
  * Compatible with PHP 7.3+.
  */
